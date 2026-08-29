@@ -24,3 +24,4 @@ composeApp/release/
 *.dmg
 *.msi
 *.exe
+.workbuddy/

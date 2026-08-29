@@ -132,7 +132,10 @@ class QuakeViewModel(
 
     /**
      * 测试预警：伪造一条带"预测烈度 + API 剩余时间"的高强度事件，走完整规则链路，
-     * 验证弹窗/声音/震动/通知是否工作。
+     * 验证**本机**的弹窗/声音/震动/通知链路是否工作。
+     *
+     * ⚠️ 仅供开发者调试本机链路使用，不代表任何真实地震预警；
+     * 该事件不会写入事件列表，但会记入触发记录。
      */
     fun simulateAlert() {
         val now = Clock.System.now().toEpochMilliseconds()
