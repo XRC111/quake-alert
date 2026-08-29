@@ -54,9 +54,9 @@ jobs:
       # ------------------------------------------------------------------
       # 敏感信息：全部来自 GitHub Secrets，运行期写入 $GITHUB_ENV，
       # 绝不以明文出现在日志里（add-mask 已由 Secrets 机制自动处理）。
+      # 注意：secrets 上下文不能用于 if: 条件，只能经 env 传递后在脚本中判空。
       # ------------------------------------------------------------------
       - name: 注入 Android 签名证书
-        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -64,6 +64,10 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           set -euo pipefail
+          if [ -z "${KEYSTORE_BASE64:-}" ]; then
+            echo "未配置签名 Secrets，跳过签名注入（release 将回落到 debug 签名）"
+            exit 0
+          fi
           echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/quake.jks"
           {
             echo "KEYSTORE_FILE=$RUNNER_TEMP/quake.jks"
@@ -73,7 +77,6 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: 注入 macOS 公证凭据（可选）
-        if: ${{ secrets.NOTARIZATION_TEAM_ID != '' }}
         env:
           NOTARIZATION_TEAM_ID: ${{ secrets.NOTARIZATION_TEAM_ID }}
           NOTARIZATION_APPLE_ID: ${{ secrets.NOTARIZATION_APPLE_ID }}
@@ -81,6 +84,10 @@ jobs:
           NOTARIZATION_IDENTITY: ${{ secrets.NOTARIZATION_IDENTITY }}
         run: |
           set -euo pipefail
+          if [ -z "${NOTARIZATION_TEAM_ID:-}" ]; then
+            echo "未配置 macOS 公证凭据，跳过（不影响 Android/Desktop 产物）"
+            exit 0
+          fi
           {
             echo "NOTARIZATION_TEAM_ID=$NOTARIZATION_TEAM_ID"
             echo "NOTARIZATION_APPLE_ID=$NOTARIZATION_APPLE_ID"
