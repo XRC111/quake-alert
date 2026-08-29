@@ -217,7 +217,8 @@ fun QuakeApp(
     if (showSettings) {
         SettingsDialog(
             settings = settings,
-            onUpdate = viewModel::updateSettings,
+            // SettingsDialog 回调完整新设置；ViewModel 的 updateSettings 接收变换函数
+            onUpdate = { new -> viewModel.updateSettings { new } },
             onDismiss = { showSettings = false },
         )
     }

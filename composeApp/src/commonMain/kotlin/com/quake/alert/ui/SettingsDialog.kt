@@ -31,12 +31,12 @@ import top.yukonga.miuix.kmp.overlay.OverlayDialog
 /**
  * 设置面板（Miuix OverlayDialog，需由 Miuix Scaffold 包裹）。
  *
- * 所有修改即时生效（回调 [onUpdate]），确认按钮仅负责关闭面板。
+ * 所有修改即时生效（回调 [onUpdate] 传入完整新设置），确认按钮仅负责关闭面板。
  */
 @Composable
 fun SettingsDialog(
     settings: AppSettings,
-    onUpdate: (AppSettings) -> AppSettings,
+    onUpdate: (AppSettings) -> Unit,
     onDismiss: () -> Unit,
 ) {
     OverlayDialog(
@@ -54,7 +54,7 @@ fun SettingsDialog(
                 Slider(
                     value = settings.intensityThreshold.toFloat(),
                     onValueChange = { v ->
-                        onUpdate { it.copy(intensityThreshold = v.toDouble().roundTo(1)) }
+                        onUpdate(settings.copy(intensityThreshold = v.toDouble().roundTo(1)))
                     },
                     valueRange = 0.5f..10.0f,
                     steps = 18,
@@ -79,7 +79,7 @@ fun SettingsDialog(
                 Slider(
                     value = settings.fallbackMagnitudeThreshold.toFloat(),
                     onValueChange = { v ->
-                        onUpdate { it.copy(fallbackMagnitudeThreshold = v.toDouble().roundTo(1)) }
+                        onUpdate(settings.copy(fallbackMagnitudeThreshold = v.toDouble().roundTo(1)))
                     },
                     valueRange = 2.0f..7.0f,
                     steps = 9,
@@ -100,7 +100,7 @@ fun SettingsDialog(
                     value = (settings.dedupeWindowMs / 60_000L).toFloat(),
                     onValueChange = { v ->
                         val minutes = v.toInt().coerceAtLeast(1)
-                        onUpdate { it.copy(dedupeWindowMs = minutes * 60_000L) }
+                        onUpdate(settings.copy(dedupeWindowMs = minutes * 60_000L))
                     },
                     valueRange = 1f..120f,
                     steps = 23,
@@ -119,19 +119,19 @@ fun SettingsDialog(
                 checked = settings.allowEscalationReAlert,
                 title = "烈度/震级升级复报",
                 subtitle = "去重窗口内强度上调 ≥ ${settings.escalationDelta} 时再次弹窗",
-                onCheckedChange = { checked -> onUpdate { it.copy(allowEscalationReAlert = checked) } },
+                onCheckedChange = { checked -> onUpdate(settings.copy(allowEscalationReAlert = checked)) },
             )
             SwitchRow(
                 checked = settings.soundEnabled,
                 title = "报警音",
                 subtitle = "触发预警时播放蜂鸣/自定义音频",
-                onCheckedChange = { checked -> onUpdate { it.copy(soundEnabled = checked) } },
+                onCheckedChange = { checked -> onUpdate(settings.copy(soundEnabled = checked)) },
             )
             SwitchRow(
                 checked = settings.vibrationEnabled,
                 title = "震动",
                 subtitle = "触发预警时同步震动",
-                onCheckedChange = { checked -> onUpdate { it.copy(vibrationEnabled = checked) } },
+                onCheckedChange = { checked -> onUpdate(settings.copy(vibrationEnabled = checked)) },
             )
 
             // ---- 本地估算（默认关闭） ----
@@ -139,7 +139,7 @@ fun SettingsDialog(
                 checked = settings.enableLocalEstimation,
                 title = "本地估算（倒计时 / 所在地烈度）",
                 subtitle = "按观测点坐标估算 S 波到达时间与本地烈度（默认关闭，以 API 为准）",
-                onCheckedChange = { checked -> onUpdate { it.copy(enableLocalEstimation = checked) } },
+                onCheckedChange = { checked -> onUpdate(settings.copy(enableLocalEstimation = checked)) },
             )
             if (settings.enableLocalEstimation) {
                 Text(
@@ -150,12 +150,12 @@ fun SettingsDialog(
                 CoordinateInput(
                     label = "纬度（如 31.23）",
                     value = settings.observerLat,
-                    onValueChange = { v -> onUpdate { it.copy(observerLat = v) } },
+                    onValueChange = { v -> onUpdate(settings.copy(observerLat = v)) },
                 )
                 CoordinateInput(
                     label = "经度（如 121.47）",
                     value = settings.observerLon,
-                    onValueChange = { v -> onUpdate { it.copy(observerLon = v) } },
+                    onValueChange = { v -> onUpdate(settings.copy(observerLon = v)) },
                 )
             }
 

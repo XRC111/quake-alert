@@ -11,7 +11,6 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.parseToJsonElement
 
 /**
  * Wolfx EEW 报文解码器（cenc_eew / sc_eew / cq_eew / cwa_eew 共用）。
