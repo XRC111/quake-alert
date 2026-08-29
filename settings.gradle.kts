@@ -1,8 +1,3 @@
-// 允许 Gradle 按 jvmToolchain 自动下载缺失的 JDK（本地无 JDK 17 时 CI/本地均可解析）
-plugins {
-    id("org.gradle.toolchains.foojay-resolver-convention") version "0.8.0"
-}
-
 pluginManagement {
     repositories {
         google {
@@ -17,6 +12,12 @@ pluginManagement {
         // Compose Multiplatform 插件与部分预览版依赖托管在 JetBrains Space
         maven("https://maven.pkg.jetbrains.space/public/p/compose/dev")
     }
+}
+
+// 允许 Gradle 按 jvmToolchain 自动下载缺失的 JDK（本地无 JDK 17 时 CI/本地均可解析）
+// 注意：Kotlin DSL 顶层块顺序要求 pluginManagement 必须先于 plugins
+plugins {
+    id("org.gradle.toolchains.foojay-resolver-convention") version "0.8.0"
 }
 
 dependencyResolutionManagement {
