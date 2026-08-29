@@ -2,9 +2,11 @@ package com.quake.alert.platform
 
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.AudioToolbox.AudioServicesPlaySystemSound
-import platform.AVFoundation.AVAudioPlayer
-import platform.AVFoundation.AVAudioSession
-import platform.AVFoundation.AVAudioSessionCategoryPlayback
+// Xcode 26 起 AVAudioPlayer/AVAudioSession 从 AVFoundation 拆分为独立 AVFAudio 框架
+// （Kotlin 2.4.10 的 platform libs 对应 platform.AVFAudio 包）
+import platform.AVFAudio.AVAudioPlayer
+import platform.AVFAudio.AVAudioSession
+import platform.AVFAudio.AVAudioSessionCategoryPlayback
 import platform.Foundation.NSBundle
 import platform.UIKit.UIApplication
 import platform.UserNotifications.UNMutableNotificationContent

@@ -1,5 +1,7 @@
 package com.quake.alert.data
 
+@file:OptIn(ExperimentalAtomicApi::class)
+
 import com.quake.alert.alert.AlertTrigger
 import com.quake.alert.data.source.CencEqListDecoder
 import com.quake.alert.data.source.WolfxEewDecoder
@@ -19,6 +21,8 @@ import io.ktor.websocket.Frame
 import io.ktor.websocket.close
 import io.ktor.websocket.readReason
 import io.ktor.websocket.readText
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
+import kotlin.concurrent.atomics.atomic
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
@@ -143,8 +147,8 @@ class QuakeAggregator(
     /** 转发自 [AlertTrigger.activeAlert]，UI 无需再单独持有 trigger。 */
     val activeAlert: StateFlow<com.quake.alert.alert.ActiveAlert?> = alertTrigger.activeAlert
 
-    @Volatile
-    private var running: Boolean = false
+    // Kotlin 2.4：commonMain 无 JVM 的 synchronized/Volatile，改用 stdlib 原子
+    private val running = atomic(false)
 
     private var wsJobs: Map<QuakeSource, Job> = emptyMap()
     private var eqlistJob: Job? = null
@@ -154,9 +158,8 @@ class QuakeAggregator(
     // ------------------------------------------------------------------
 
     /** 幂等启动。重复调用无副作用。 */
-    fun start(): Unit = synchronized(this) {
-        if (running) return
-        running = true
+    fun start() {
+        if (!running.compareAndSet(false, true)) return
         wsJobs = config.eewSources.associate { sourceConfig ->
             sourceConfig.source to internalScope.launch(CoroutineName("ws-${sourceConfig.source.apiId}")) {
                 wolfxLoop(sourceConfig)
@@ -167,9 +170,8 @@ class QuakeAggregator(
     }
 
     /** 停止数据拉取。可再次 [start]。 */
-    fun stop(): Unit = synchronized(this) {
-        if (!running) return
-        running = false
+    fun stop() {
+        if (!running.compareAndSet(true, false)) return
         wsJobs.values.forEach { it.cancel(CancellationException("QuakeAggregator.stop()")) }
         eqlistJob?.cancel(CancellationException("QuakeAggregator.stop()"))
         wsJobs = emptyMap()
@@ -381,18 +383,28 @@ class QuakeAggregator(
         }
     }
 
-    private val lastFrameLock = Any()
     private var lastFrameAtMap: Map<QuakeSource, Long> = emptyMap()
+    private val lastFrameLock = atomic(false)
+
+    private inline fun <T> withFrameLock(block: () -> T): T {
+        // 自旋锁：Kotlin 2.4 commonMain 无 synchronized，用 stdlib 原子实现
+        while (!lastFrameLock.compareAndSet(false, true)) { /* spin */ }
+        try {
+            return block()
+        } finally {
+            lastFrameLock.compareAndSet(true, false)
+        }
+    }
 
     private fun markAlive(source: QuakeSource) {
         val now = nowMs()
-        synchronized(lastFrameLock) {
+        withFrameLock {
             lastFrameAtMap = lastFrameAtMap + (source to now)
         }
         setStatus(source) { it.copy(lastMessageAt = now) }
     }
 
-    private fun lastFrameAt(source: QuakeSource): Long = synchronized(lastFrameLock) {
+    private fun lastFrameAt(source: QuakeSource): Long = withFrameLock {
         lastFrameAtMap[source] ?: 0L
     }
 

@@ -2,6 +2,7 @@ package com.quake.alert.alert
 
 import com.quake.alert.model.AlertLevel
 import com.quake.alert.model.QuakeEvent
+import kotlin.concurrent.Volatile
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
