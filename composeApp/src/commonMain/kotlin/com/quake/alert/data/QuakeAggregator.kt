@@ -17,6 +17,7 @@ import io.ktor.http.URLProtocol
 import io.ktor.websocket.CloseReason
 import io.ktor.websocket.Frame
 import io.ktor.websocket.close
+import io.ktor.websocket.readReason
 import io.ktor.websocket.readText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineName
@@ -250,8 +251,8 @@ class QuakeAggregator(
                                 is Frame.Pong -> markAlive(source)
 
                                 is Frame.Close -> {
-                                    // Ktor 3.x：Frame.Close 的关闭原因字段为 reason（CloseReason）
-                                    logger("[${source.apiId}] 服务端关闭连接: ${frame.reason?.message}")
+                                    // readReason() 是 FrameCommonKt 顶层扩展，需 import io.ktor.websocket.readReason
+                                    logger("[${source.apiId}] 服务端关闭连接: ${frame.readReason()?.message}")
                                     return@consumeEach
                                 }
 
