@@ -42,7 +42,7 @@
 | 领域 | 选型 | 版本 |
 | --- | --- | --- |
 | 语言 | Kotlin | 2.1.20 |
-| UI | Compose Multiplatform + Material 3 | 1.8.0 |
+| UI | **Miuix**（MIUI / HyperOS 风格 Compose Multiplatform 组件库） | 0.9.2 |
 | 架构 | MVVM（JetBrains 多平台 `lifecycle-viewmodel-compose`） | 2.8.7 |
 | 网络 | Ktor Client（WebSockets / HttpTimeout / Logging） | 3.1.0 |
 | 并发 | Coroutines + SharedFlow / StateFlow | 1.10.2 |
@@ -90,7 +90,7 @@ earthquake/
         │   │   ├── SettingsDialog.kt          # 设置面板
         │   │   ├── AlertOverlay.kt            # 全屏闪烁预警弹窗
         │   │   ├── QuakeViewModel.kt          # MVVM 桥接 + 触发历史 + 测试预警
-        │   │   └── theme/Theme.kt             # Material 3 深色主题
+        │   │   └── theme/Theme.kt             # Miuix 深色主题 + 固定调色板（QuakeColors）
         │   └── util/                          # 时间/数值格式化（common 无 String.format）
         ├── androidMain/                       # MediaPlayer / Vibrator / WakeLock / 全屏通知
         ├── iosMain/                           # AVAudioPlayer / AudioServices / UNNotification
@@ -312,7 +312,7 @@ base64 -i quake.jks | pbcopy    # 粘贴到 KEYSTORE_BASE64
 | 烈度阈值 / 降级震级阈值 / 去重窗口（默认值） | `AlertRuleConfig`（`alert/AlertTrigger.kt`）+ `AppSettings` |
 | 本地估算模型（走时差 / 烈度衰减式） | `alert/LocalEstimator.kt` |
 | 烈度 / 到达时间字段解析 | `data/source/WolfxEewDecoder.kt`（`Intensity` / `ArrivalTime` / `RemainTime` 别名表） |
-| 主题配色 | `ui/theme/Theme.kt` |
+| 主题配色 | `ui/theme/Theme.kt`（MiuixTheme + QuakeColors 固定深色调色板） |
 | 报警音 | 放入 `androidMain/res/raw/alarm.wav`、`desktopMain/resources/alarm.wav`、iOS bundle `alarm.wav`；缺失时自动回落合成音 |
 | 设置持久化 | `settings/AppSettings.kt` 顶部注释中的平台键值存储接入点 |
 

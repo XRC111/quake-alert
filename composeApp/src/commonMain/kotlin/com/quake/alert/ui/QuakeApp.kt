@@ -23,11 +23,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -51,6 +46,7 @@ import com.quake.alert.model.AlertLevel
 import com.quake.alert.model.QuakeEvent
 import com.quake.alert.model.QuakeSource
 import com.quake.alert.platform.AlertEffects
+import com.quake.alert.ui.theme.QuakeColors
 import com.quake.alert.ui.theme.QuakeTheme
 import com.quake.alert.ui.theme.magnitudeColor
 import com.quake.alert.util.formatCountdown
@@ -59,6 +55,10 @@ import com.quake.alert.util.formatDepth
 import com.quake.alert.util.formatIntensity
 import com.quake.alert.util.formatLocalTime
 import com.quake.alert.util.formatMagnitude
+import top.yukonga.miuix.kmp.basic.Scaffold
+import top.yukonga.miuix.kmp.basic.SmallTopAppBar
+import top.yukonga.miuix.kmp.basic.TabRow
+import top.yukonga.miuix.kmp.basic.Text
 
 /** 记住 ViewModel 实例。跨配置变更的保活由各平台自行处理（Android 可用 ViewModelStoreOwner）。 */
 @Composable
@@ -116,22 +116,32 @@ fun QuakeApp(
     }
 
     QuakeTheme {
-        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            Box(Modifier.fillMaxSize()) {
-                Column(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().background(QuakeColors.Background)) {
+            // Miuix Scaffold：提供 TopAppBar / 底部 TabRow / OverlayDialog 弹窗宿主
+            Scaffold(
+                topBar = {
+                    SmallTopAppBar(title = "地震预警")
+                },
+                bottomBar = {
+                    TabRow(
+                        tabs = listOf(
+                            "地震事件",
+                            if (fullHistory.isNotEmpty()) "事件历史 (${fullHistory.size})" else "事件历史",
+                            if (alertHistory.isNotEmpty()) "触发记录 (${alertHistory.size})" else "触发记录",
+                        ),
+                        selectedTabIndex = selectedTab,
+                        onTabSelected = { selectedTab = it },
+                    )
+                },
+            ) { paddingValues ->
+                Column(
+                    modifier = Modifier.fillMaxSize().padding(paddingValues),
+                ) {
                     SourceStatusBar(statuses = sourceStatuses)
-
                     ActionBar(
                         onTestAlert = viewModel::simulateAlert,
                         onOpenSettings = { showSettings = true },
                         onClearEvents = viewModel::clearEvents,
-                    )
-
-                    TabSelector(
-                        selected = selectedTab,
-                        onSelect = { selectedTab = it },
-                        historyCount = fullHistory.size,
-                        alertCount = alertHistory.size,
                     )
 
                     when (selectedTab) {
@@ -182,23 +192,23 @@ fun QuakeApp(
                         }
                     }
                 }
+            }
 
-                // 全屏预警覆盖层：仅当用户点击"我已安全"后才消失
-                AnimatedVisibility(
-                    visible = alert != null,
-                    enter = fadeIn(),
-                    exit = fadeOut(),
-                ) {
-                    alert?.let { current ->
-                        AlertOverlay(
-                            alert = current,
-                            onAcknowledge = {
-                                effects.stopAlarm()
-                                effects.setWindowAlwaysOnTop(false)
-                                viewModel.acknowledgeAlert()
-                            },
-                        )
-                    }
+            // 全屏预警覆盖层：仅当用户点击"我已安全"后才消失
+            AnimatedVisibility(
+                visible = alert != null,
+                enter = fadeIn(),
+                exit = fadeOut(),
+            ) {
+                alert?.let { current ->
+                    AlertOverlay(
+                        alert = current,
+                        onAcknowledge = {
+                            effects.stopAlarm()
+                            effects.setWindowAlwaysOnTop(false)
+                            viewModel.acknowledgeAlert()
+                        },
+                    )
                 }
             }
         }
@@ -222,7 +232,7 @@ private fun SourceStatusBar(statuses: Map<QuakeSource, SourceStatus>) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .background(QuakeColors.SurfaceVariant)
             .horizontalScroll(rememberScrollState())
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -231,16 +241,16 @@ private fun SourceStatusBar(statuses: Map<QuakeSource, SourceStatus>) {
         SOURCE_ORDER.forEach { source ->
             val status = statuses[source] ?: SourceStatus(source, ConnectionState.Idle)
             val (color, text) = when (status.state) {
-                ConnectionState.Connected -> Color(0xFF4CAF50) to "在线"
-                ConnectionState.Connecting -> Color(0xFFFFC107) to "连接中"
-                ConnectionState.Reconnecting -> Color(0xFFFF9800) to "重连 ${status.reconnectAttempt}"
-                ConnectionState.Error -> Color(0xFFF44336) to "异常"
-                ConnectionState.Idle -> Color(0xFF9E9E9E) to "空闲"
+                ConnectionState.Connected -> QuakeColors.Green to "在线"
+                ConnectionState.Connecting -> QuakeColors.Yellow to "连接中"
+                ConnectionState.Reconnecting -> QuakeColors.Orange to "重连 ${status.reconnectAttempt}"
+                ConnectionState.Error -> QuakeColors.Error to "异常"
+                ConnectionState.Idle -> QuakeColors.Outline to "空闲"
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(8.dp).background(color, CircleShape))
                 Spacer(Modifier.width(6.dp))
-                Text(source.displayName, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(source.displayName, fontSize = 12.sp, color = QuakeColors.OnSurfaceVariant)
                 Spacer(Modifier.width(4.dp))
                 Text(text, fontSize = 11.sp, color = color, fontWeight = FontWeight.Medium)
             }
@@ -263,9 +273,9 @@ private fun ActionBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
-        ActionButton("▶ 测试预警", Color(0xFFFF5252), onTestAlert)
-        ActionButton("⚙ 设置", MaterialTheme.colorScheme.primary, onOpenSettings)
-        ActionButton("🗑 清空列表", MaterialTheme.colorScheme.onSurfaceVariant, onClearEvents)
+        ActionButton("▶ 测试预警", QuakeColors.Error, onTestAlert)
+        ActionButton("⚙ 设置", QuakeColors.Primary, onOpenSettings)
+        ActionButton("🗑 清空列表", QuakeColors.OnSurfaceVariant, onClearEvents)
     }
 }
 
@@ -284,49 +294,6 @@ private fun ActionButton(label: String, color: Color, onClick: () -> Unit) {
 }
 
 // ---------------------------------------------------------------------------
-// Tab 切换（3 个：实时 / 历史 / 触发记录）
-// ---------------------------------------------------------------------------
-
-@Composable
-private fun TabSelector(
-    selected: Int,
-    onSelect: (Int) -> Unit,
-    historyCount: Int,
-    alertCount: Int,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .padding(horizontal = 12.dp, vertical = 4.dp),
-    ) {
-        TabItem("地震事件", selected == 0) { onSelect(0) }
-        Spacer(Modifier.width(4.dp))
-        TabItem(if (historyCount > 0) "事件历史 ($historyCount)" else "事件历史", selected == 1) { onSelect(1) }
-        Spacer(Modifier.width(4.dp))
-        TabItem(if (alertCount > 0) "触发记录 ($alertCount)" else "触发记录", selected == 2) { onSelect(2) }
-    }
-}
-
-@Composable
-private fun TabItem(label: String, selected: Boolean, onClick: () -> Unit) {
-    Text(
-        text = label,
-        fontSize = 13.sp,
-        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(
-                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                else Color.Transparent
-            )
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-    )
-}
-
-// ---------------------------------------------------------------------------
 // 空态
 // ---------------------------------------------------------------------------
 
@@ -337,12 +304,12 @@ internal fun EmptyHint(modifier: Modifier = Modifier) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("正在监听地震预警…", fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("正在监听地震预警…", fontSize = 16.sp, color = QuakeColors.OnSurfaceVariant)
         Spacer(Modifier.height(8.dp))
         Text(
             "CENC / 四川 / 重庆 / 台湾 4 路实时预警 + 速报目录，同震自动合并。",
             fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.outline,
+            color = QuakeColors.Outline,
         )
     }
 }
@@ -354,12 +321,12 @@ private fun EmptyAlertHistoryHint(modifier: Modifier = Modifier) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("暂无触发记录", fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("暂无触发记录", fontSize = 16.sp, color = QuakeColors.OnSurfaceVariant)
         Spacer(Modifier.height(8.dp))
         Text(
             "达到阈值弹出预警时会自动记录；也可用\"测试预警\"按钮验证链路。",
             fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.outline,
+            color = QuakeColors.Outline,
         )
     }
 }
@@ -374,24 +341,22 @@ private fun QuakeEventCard(event: QuakeEvent) {
     val isSevere = event.alertLevel == AlertLevel.SEVERE
     val multiSource = event.mergedSources.isNotEmpty()
 
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSevere) {
-                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)
-            } else {
-                MaterialTheme.colorScheme.surfaceVariant
-            },
-        ),
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(
+                if (isSevere) Color(0xFF5C1414).copy(alpha = 0.35f)
+                else QuakeColors.SurfaceVariant
+            )
+            .padding(14.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.width(72.dp),
             ) {
-                Text("M", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                Text("M", fontSize = 11.sp, color = QuakeColors.Outline)
                 Text(
                     text = formatMagnitude(event.magnitude),
                     fontSize = 30.sp,
@@ -407,7 +372,7 @@ private fun QuakeEventCard(event: QuakeEvent) {
                     text = event.placeName,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = QuakeColors.OnSurface,
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
@@ -418,7 +383,7 @@ private fun QuakeEventCard(event: QuakeEvent) {
                         append(formatDepth(event.depthKm))
                     },
                     fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = QuakeColors.OnSurfaceVariant,
                 )
                 Spacer(Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -426,14 +391,14 @@ private fun QuakeEventCard(event: QuakeEvent) {
                         Text(
                             text = "预警 · 第 ${event.updateSerial ?: 1} 报",
                             fontSize = 11.sp,
-                            color = Color(0xFFFF8A65),
+                            color = QuakeColors.EewOrange,
                             fontWeight = FontWeight.Medium,
                         )
                     } else {
                         Text(
                             text = "速报目录",
                             fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.outline,
+                            color = QuakeColors.Outline,
                         )
                     }
                     Spacer(Modifier.width(8.dp))
@@ -444,7 +409,7 @@ private fun QuakeEventCard(event: QuakeEvent) {
                             event.source.displayName
                         },
                         fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = QuakeColors.OnSurfaceVariant,
                     )
                 }
             }
@@ -453,12 +418,12 @@ private fun QuakeEventCard(event: QuakeEvent) {
                 Text(
                     text = formatDegree(event.latitude),
                     fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.outline,
+                    color = QuakeColors.Outline,
                 )
                 Text(
                     text = formatDegree(event.longitude),
                     fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.outline,
+                    color = QuakeColors.Outline,
                 )
             }
         }
@@ -469,17 +434,16 @@ private fun QuakeEventCard(event: QuakeEvent) {
 private fun AlertHistoryCard(entry: AlertHistoryEntry) {
     val color = magnitudeColor(entry.event.magnitude)
 
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-        ),
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(QuakeColors.SurfaceVariant)
+            .padding(14.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(72.dp)) {
-                Text("M", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                Text("M", fontSize = 11.sp, color = QuakeColors.Outline)
                 Text(
                     text = formatMagnitude(entry.event.magnitude),
                     fontSize = 26.sp,
@@ -493,7 +457,7 @@ private fun AlertHistoryCard(entry: AlertHistoryEntry) {
                     text = entry.event.placeName,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = QuakeColors.OnSurface,
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
@@ -502,14 +466,14 @@ private fun AlertHistoryCard(entry: AlertHistoryEntry) {
                         entry.event.intensity?.let { append(" · 烈度 "); append(formatIntensity(it)) }
                     },
                     fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = QuakeColors.OnSurfaceVariant,
                 )
             }
             Text(
                 text = if (entry.acknowledged) "已确认" else "未确认",
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium,
-                color = if (entry.acknowledged) Color(0xFF4CAF50) else Color(0xFFFFC107),
+                color = if (entry.acknowledged) QuakeColors.Green else QuakeColors.Yellow,
             )
         }
     }
@@ -520,7 +484,7 @@ private fun SourceFooter() {
     Text(
         text = "数据源：Wolfx（CENC · 四川 · 重庆 · 台湾 CWA）· https://wolfx.jp",
         fontSize = 11.sp,
-        color = MaterialTheme.colorScheme.outline,
+        color = QuakeColors.Outline,
         modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
     )
 }

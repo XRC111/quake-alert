@@ -60,6 +60,9 @@ kotlin {
             implementation(compose.components.resources)
             implementation(compose.components.uiToolingPreview)
 
+            // UI 组件库：Miuix（MIUI / HyperOS 风格，基于 Compose Multiplatform）
+            implementation(libs.miuix.ui)
+
             // MVVM
             implementation(libs.androidx.lifecycle.viewmodel.compose)
             implementation(libs.androidx.lifecycle.runtime.compose)
