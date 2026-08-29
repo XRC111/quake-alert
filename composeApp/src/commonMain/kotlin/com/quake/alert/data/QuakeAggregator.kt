@@ -250,8 +250,8 @@ class QuakeAggregator(
                                 is Frame.Pong -> markAlive(source)
 
                                 is Frame.Close -> {
-                                    // Ktor 3.x：Frame.Close 的关闭原因改为属性 closeReason（2.x 的 readReason() 已移除）
-                                    logger("[${source.apiId}] 服务端关闭连接: ${frame.closeReason?.message}")
+                                    // Ktor 3.x：Frame.Close 的关闭原因字段为 reason（CloseReason）
+                                    logger("[${source.apiId}] 服务端关闭连接: ${frame.reason?.message}")
                                     return@consumeEach
                                 }
 
