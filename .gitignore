@@ -1,0 +1,26 @@
+*.iml
+.gradle
+.kotlin
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+.cxx/
+
+# 签名
+keystore.properties
+*.jks
+*.keystore
+
+# 产物
+composeApp/build/
+composeApp/release/
+*.apk
+*.aab
+*.dmg
+*.msi
+*.exe

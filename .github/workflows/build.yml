@@ -1,0 +1,192 @@
+name: Build All Targets
+
+on:
+  push:
+    branches: [ main, master, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      build_ios:
+        description: '同时编译 iOS framework / XCFramework'
+        type: boolean
+        default: true
+
+# 同一分支上重复 push 时取消旧的运行，省 Runner 时长
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAVA_VERSION: '17'
+
+jobs:
+  build:
+    name: Android + iOS + Desktop (macOS Runner)
+    runs-on: macos-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: true
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Gradle (缓存 + 构建扫描)
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x ./gradlew
+
+      # ------------------------------------------------------------------
+      # 敏感信息：全部来自 GitHub Secrets，运行期写入 $GITHUB_ENV，
+      # 绝不以明文出现在日志里（add-mask 已由 Secrets 机制自动处理）。
+      # ------------------------------------------------------------------
+      - name: 注入 Android 签名证书
+        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/quake.jks"
+          {
+            echo "KEYSTORE_FILE=$RUNNER_TEMP/quake.jks"
+            echo "KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+            echo "KEY_ALIAS=$KEY_ALIAS"
+            echo "KEY_PASSWORD=$KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+
+      - name: 注入 macOS 公证凭据（可选）
+        if: ${{ secrets.NOTARIZATION_TEAM_ID != '' }}
+        env:
+          NOTARIZATION_TEAM_ID: ${{ secrets.NOTARIZATION_TEAM_ID }}
+          NOTARIZATION_APPLE_ID: ${{ secrets.NOTARIZATION_APPLE_ID }}
+          NOTARIZATION_PASSWORD: ${{ secrets.NOTARIZATION_PASSWORD }}
+          NOTARIZATION_IDENTITY: ${{ secrets.NOTARIZATION_IDENTITY }}
+        run: |
+          set -euo pipefail
+          {
+            echo "NOTARIZATION_TEAM_ID=$NOTARIZATION_TEAM_ID"
+            echo "NOTARIZATION_APPLE_ID=$NOTARIZATION_APPLE_ID"
+            echo "NOTARIZATION_PASSWORD=$NOTARIZATION_PASSWORD"
+            echo "NOTARIZATION_IDENTITY=$NOTARIZATION_IDENTITY"
+          } >> "$GITHUB_ENV"
+
+      # ------------------------------------------------------------------
+      # 1) 编译校验（commonMain 全平台 KLib 编译）
+      # ------------------------------------------------------------------
+      - name: 全平台编译校验
+        run: ./gradlew :composeApp:compileKotlinDesktop :composeApp:compileKotlinIosArm64 :composeApp:compileKotlinIosSimulatorArm64 --stacktrace
+
+      # ------------------------------------------------------------------
+      # 2) Android APK / AAB
+      # ------------------------------------------------------------------
+      - name: 构建 Android Debug APK
+        run: ./gradlew :composeApp:assembleDebug --stacktrace
+
+      - name: 构建 Android Release APK + AAB
+        run: ./gradlew :composeApp:assembleRelease :composeApp:bundleRelease --stacktrace
+
+      # ------------------------------------------------------------------
+      # 3) iOS framework / XCFramework
+      #    产物给 Xcode 工程或 SPM 集成使用
+      # ------------------------------------------------------------------
+      - name: 构建 iOS XCFramework
+        if: ${{ github.event.inputs.build_ios != 'false' }}
+        run: ./gradlew :composeApp:assembleComposeAppXCFramework --stacktrace
+
+      # ------------------------------------------------------------------
+      # 4) 桌面端：macOS Runner 上产出 DMG
+      #    （Windows 的 Msi/Exe 由单独的 windows-latest job 负责）
+      # ------------------------------------------------------------------
+      - name: 构建桌面端 DMG（macOS）
+        run: ./gradlew :composeApp:packageReleaseDistributionForCurrentOS --stacktrace
+
+      # ------------------------------------------------------------------
+      # 产物归档
+      # ------------------------------------------------------------------
+      - name: 上传 Android 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: |
+            composeApp/build/outputs/apk/**/*.apk
+            composeApp/build/outputs/bundle/**/*.aab
+          if-no-files-found: error
+
+      - name: 上传 iOS XCFramework
+        if: ${{ github.event.inputs.build_ios != 'false' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-xcframework
+          path: composeApp/build/XCFramework/release/**
+          if-no-files-found: error
+
+      - name: 上传桌面端产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-macos
+          path: |
+            composeApp/build/compose/binaries/main-release/dmg/*
+          if-no-files-found: error
+
+      # 打 tag 时自动创建 Release 并把三端产物挂上去
+      - name: 发布 GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            composeApp/build/outputs/apk/release/*.apk
+            composeApp/build/compose/binaries/main-release/dmg/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ----------------------------------------------------------------------
+  # Windows 端：Msi / Exe 只能在 Windows Runner 上打
+  # ----------------------------------------------------------------------
+  build-windows:
+    name: Desktop (Windows Runner)
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: 构建桌面端 Msi / Exe
+        run: .\gradlew.bat :composeApp:packageReleaseDistributionForCurrentOS --stacktrace
+
+      - name: 上传 Windows 安装包
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-windows
+          path: |
+            composeApp/build/compose/binaries/main-release/**/*.msi
+            composeApp/build/compose/binaries/main-release/**/*.exe
+          if-no-files-found: error

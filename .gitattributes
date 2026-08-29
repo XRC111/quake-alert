@@ -1,0 +1,14 @@
+# 统一行尾：文本文件按仓库规范转换，避免跨平台 diff 噪音
+* text=auto
+
+# shell 脚本必须保持 LF（Windows 上 CRLF 会导致 gradlew 无法执行）
+*.sh text eol=lf
+gradlew text eol=lf
+
+# 二进制文件不转换
+*.jar binary
+*.png binary
+*.jpg binary
+*.ico binary
+*.keystore binary
+*.jks binary

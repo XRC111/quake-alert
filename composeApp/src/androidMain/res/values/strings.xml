@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">地震预警</string>
+    <string name="alert_channel_name">地震预警</string>
+    <string name="alert_channel_description">达到阈值时立即弹出地震预警</string>
+</resources>
