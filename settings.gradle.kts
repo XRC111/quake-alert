@@ -1,3 +1,8 @@
+// 允许 Gradle 按 jvmToolchain 自动下载缺失的 JDK（本地无 JDK 17 时 CI/本地均可解析）
+plugins {
+    id("org.gradle.toolchains.foojay-resolver-convention") version "0.8.0"
+}
+
 pluginManagement {
     repositories {
         google {
