@@ -37,8 +37,10 @@ kotlin {
     jvm("desktop")
 
     // iOS -----------------------------------------------------------------
-    // iosX64 仅用于 Intel 模拟器，真机走 iosArm64
-    listOf(iosX64(), iosArm64(), iosSimulatorArm64()).forEach { iosTarget ->
+    // 注意：miuix 0.9.x 仅发布 iosArm64 + iosSimulatorArm64（无 iosX64 构件），
+    // 故移除 iosX64（Intel 模拟器）；Apple Silicon 模拟器走 iosSimulatorArm64。
+    // Kotlin 2.4 起 iosX64 已降为 Tier 3 支持。
+    listOf(iosArm64(), iosSimulatorArm64()).forEach { iosTarget ->
         iosTarget.binaries.framework {
             baseName = "ComposeApp"
             isStatic = true
