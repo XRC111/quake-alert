@@ -7,8 +7,11 @@ android-targetSdk = "35"
 androidx-activityCompose = "1.10.1"
 androidx-coreKtx = "1.15.0"
 # 注意：JetBrains 多平台 lifecycle 版本线独立于 androidx（2.8.7 不存在，2.8.4 为 CMP 1.8 同期稳定版）
+# CMP 1.11.1 配套 lifecycle 2.11.0-beta01；先用 2.8.4 验证，若运行时冲突再升
 androidx-lifecycle = "2.8.4"
-compose-multiplatform = "1.8.0"
+# CMP 1.11.1：miuix 0.9.2 编译自 foundation 1.11.1 / material3-window-size 1.9.0，
+# 锁 1.8.0 会导致 Android 打开即闪退（运行时二进制不兼容）
+compose-multiplatform = "1.11.1"
 # Kotlin 2.4.10：miuix 0.9.x 系列全部用 Kotlin 2.3+ 编译（0.9.2=2.4.0），
 # 2.1.20 无法消费其元数据（incompatible metadata 2.4.0 vs 2.1.0）。
 # KGP 2.4.10 兼容 Gradle 7.6.3~9.5.0、最低 AGP 8.5.2，本工程 8.11.1/8.7.3 均满足。
