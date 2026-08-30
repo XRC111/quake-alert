@@ -186,10 +186,11 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      # jpackage 打包 Exe/Msi 依赖 WiX（candle.exe/light.exe），
-      # 裸 windows-latest runner 未预装，需显式安装
-      - name: 安装 WiX Toolset
-        run: choco install wixtoolset --version=3.11.2 -y --no-progress
+      # jpackage 打包 Exe/Msi 依赖 WiX（candle.exe/light.exe）。
+      # windows-latest 预装 WiX 3.14.1，但 jpackage(JDK17) 与 3.14 存在兼容问题，
+      # 显式降级到 compose 插件同款 wix311（3.11.2）
+      - name: 安装 WiX Toolset 3.11
+        run: choco install wixtoolset --version=3.11.2 -y --no-progress --allow-downgrade
 
       - name: 构建桌面端 Msi / Exe
         run: .\gradlew.bat :composeApp:packageReleaseDistributionForCurrentOS --stacktrace
