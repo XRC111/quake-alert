@@ -21,12 +21,12 @@ actual class AlertEffects {
     private var player: AVAudioPlayer? = null
 
     actual fun playAlarm() {
-        // 让声音在静音开关打开 / 后台时也能播放
+        // 让声音在静音开关打开 / 后台时也能播放：Playback 类别即覆盖静音键，
+        // AVAudioPlayer.play() 会隐式激活会话，无需显式 setActive
+        //（Xcode 26 SDK 的 Kotlin/Native AVFAudio 绑定已不含 setActive 成员）。
         runCatching {
             val session = AVAudioSession.sharedInstance()
             session.setCategory(AVAudioSessionCategoryPlayback, null)
-            // Xcode 26 起 setActive:error: 两参变体被移除，需带 options 参数（0 = 无选项）
-            session.setActive(true, 0uL, null)
         }
 
         // 优先使用打进 App Bundle 的 alarm.wav（在 Xcode 里加到 Copy Bundle Resources）
@@ -49,7 +49,8 @@ actual class AlertEffects {
     actual fun stopAlarm() {
         runCatching { player?.stop() }
         player = null
-        runCatching { AVAudioSession.sharedInstance().setActive(false, 0uL, null) }
+        // 会话由系统管理，play 结束即隐式释放，无需显式停用（setActive 在
+        // Xcode 26 的 Kotlin/Native 绑定中不存在）
     }
 
     actual fun vibrate() {
