@@ -202,5 +202,11 @@ compose.desktop {
                 }
             }
         }
+
+        // ProGuard 7.7.0 对 Kotlin 2.4 字节码中的 ktor 合成类（SocketBase$attachFor$1）
+        // 与 com.jetbrains.JBR 会误报未解析引用并中止打包；用自定义规则忽略这类警告。
+        buildTypes.release.proguard {
+            configurationFiles.from(project.file("compose-desktop.pro"))
+        }
     }
 }

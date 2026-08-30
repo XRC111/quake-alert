@@ -25,7 +25,8 @@ actual class AlertEffects {
         runCatching {
             val session = AVAudioSession.sharedInstance()
             session.setCategory(AVAudioSessionCategoryPlayback, null)
-            session.setActive(true, null)
+            // Xcode 26 起 setActive:error: 两参变体被移除，需带 options 参数（0 = 无选项）
+            session.setActive(true, 0uL, null)
         }
 
         // 优先使用打进 App Bundle 的 alarm.wav（在 Xcode 里加到 Copy Bundle Resources）
@@ -48,7 +49,7 @@ actual class AlertEffects {
     actual fun stopAlarm() {
         runCatching { player?.stop() }
         player = null
-        runCatching { AVAudioSession.sharedInstance().setActive(false, null) }
+        runCatching { AVAudioSession.sharedInstance().setActive(false, 0uL, null) }
     }
 
     actual fun vibrate() {
