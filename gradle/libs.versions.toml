@@ -1,5 +1,6 @@
 [versions]
-agp = "8.9.1"
+# AGP 8.13.2：8.x 最终稳定版，SDK 解析器支持 minor 版本包（android-37.0）
+agp = "8.13.2"
 android-compileSdk = "37"
 android-minSdk = "24"
 android-targetSdk = "35"
