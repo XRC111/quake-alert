@@ -145,7 +145,7 @@ jobs:
       # ------------------------------------------------------------------
       - name: 构建 iOS XCFramework
         if: ${{ github.event.inputs.build_ios != 'false' }}
-        run: ./gradlew :composeApp:assembleComposeAppXCFramework --stacktrace
+        run: ./gradlew :composeApp:assembleXCFramework --stacktrace
 
       # ------------------------------------------------------------------
       # 4) 桌面端：macOS Runner 上产出 DMG
@@ -171,7 +171,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ios-xcframework
-          path: composeApp/build/XCFramework/release/**
+          path: composeApp/build/XCFrameworks/**
           if-no-files-found: error
 
       - name: 上传桌面端产物
