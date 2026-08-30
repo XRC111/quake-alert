@@ -184,8 +184,10 @@ compose.desktop {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi)
             packageName = "QuakeAlert"
             packageVersion = "1.0.0"
-            description = "跨平台地震预警客户端（Wolfx CENC + USGS 多源聚合）"
-            copyright = "© 2026 QuakeAlert. Data courtesy of Wolfx / USGS."
+            // 打包元数据保持纯 ASCII：jpackage 在 Windows 上处理非 ASCII
+            // 字符（中文/©）会触发 Charset 解码错误（Input length = 1）
+            description = "Cross-platform earthquake alert client (Wolfx CENC + USGS multi-source)"
+            copyright = "(c) 2026 QuakeAlert. Data courtesy of Wolfx / USGS."
             vendor = "QuakeAlert"
 
             windows {
