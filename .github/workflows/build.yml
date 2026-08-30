@@ -44,12 +44,12 @@ jobs:
         uses: android-actions/setup-android@v3
 
       # compileSdk 37（miuix 0.9.2 要求）需要 platforms;android-37，
-      # runner 预装 SDK 未必包含；先更新 sdkmanager 索引再安装
+      # 注意：Android 16 起 Google 仓库包名带 minor 号（platforms;android-37.0）
       - name: 安装 Android SDK Platform 37
         run: |
           sdkmanager --update > /dev/null 2>&1 || true
           yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "platforms;android-37" "build-tools;35.0.0"
+          sdkmanager "platforms;android-37.0" "build-tools;35.0.0"
 
       - name: Setup Gradle (缓存 + 构建扫描)
         uses: gradle/actions/setup-gradle@v4

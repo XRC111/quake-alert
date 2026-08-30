@@ -5,6 +5,7 @@ import org.gradle.api.DefaultTask
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.TaskAction
+import java.io.File
 import java.util.Properties
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
@@ -238,7 +239,7 @@ abstract class StripInvalidJarSignaturesTask : DefaultTask() {
         dir.walkTopDown()
             .filter { it.isFile && it.extension.equals("jar", true) }
             .forEach { jarFile ->
-                val temp = java.io.File.createTempFile("strip-${jarFile.name}", ".jar", jarFile.parentFile)
+                val temp = File.createTempFile("strip-${jarFile.name}", ".jar", jarFile.parentFile)
                 try {
                     ZipFile(jarFile).use { zip ->
                         ZipOutputStream(temp.outputStream().buffered()).use { zout ->
