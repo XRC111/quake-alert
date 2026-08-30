@@ -170,7 +170,10 @@ compose.desktop {
         mainClass = "com.quake.alert.MainKt"
 
         nativeDistributions {
-            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Exe)
+            // 注意：Windows 的 Exe 安装包（jpackage --type exe）在裸 CI runner 上
+            // 反复 jpackage exit 1（工具 stderr 不落 workflow 日志，根因待查）。
+            // 暂只保留 Dmg + Msi（MSI 为 jpackage 最成熟格式），Exe 待定位后恢复。
+            targetFormats(TargetFormat.Dmg, TargetFormat.Msi)
             packageName = "QuakeAlert"
             packageVersion = "1.0.0"
             description = "跨平台地震预警客户端（Wolfx CENC + USGS 多源聚合）"
