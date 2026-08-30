@@ -1,7 +1,14 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.gradle.api.DefaultTask
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.tasks.InputDirectory
+import org.gradle.api.tasks.TaskAction
 import java.util.Properties
+import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
+import java.util.zip.ZipOutputStream
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -212,4 +219,60 @@ compose.desktop {
             configurationFiles.from(project.file("compose-desktop.pro"))
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// ProGuard 输出 jar 签名清理：
+// ProGuard 重写带签名的依赖 jar 后，META-INF 中的 *.SF/*.DSA/*.RSA 等签名
+// 条目失效，jpackage 打包 MSI/Exe 时校验失败（exit 1）。在 proguardReleaseJars
+// 之后把这些签名条目剔除（与 opendeep/多家项目的成熟做法一致）。
+// ---------------------------------------------------------------------------
+abstract class StripInvalidJarSignaturesTask : DefaultTask() {
+    @get:InputDirectory
+    abstract val jarDirectory: DirectoryProperty
+
+    @TaskAction
+    fun stripSignatures() {
+        val dir = jarDirectory.get().asFile
+        if (!dir.exists()) return
+        dir.walkTopDown()
+            .filter { it.isFile && it.extension.equals("jar", true) }
+            .forEach { jarFile ->
+                val temp = java.io.File.createTempFile("strip-${jarFile.name}", ".jar", jarFile.parentFile)
+                try {
+                    ZipFile(jarFile).use { zip ->
+                        ZipOutputStream(temp.outputStream().buffered()).use { zout ->
+                            val entries = zip.entries()
+                            while (entries.hasMoreElements()) {
+                                val entry = entries.nextElement()
+                                val name = entry.name
+                                val isSignature = name.startsWith("META-INF/SIG-") ||
+                                    name.endsWith(".SF") || name.endsWith(".DSA") ||
+                                    name.endsWith(".RSA") || name.endsWith(".EC")
+                                if (isSignature) continue
+                                zout.putNextEntry(ZipEntry(name))
+                                if (!entry.isDirectory) zip.getInputStream(entry).copyTo(zout)
+                                zout.closeEntry()
+                            }
+                        }
+                    }
+                    if (temp.length() >= 0 && !jarFile.delete()) {
+                        throw GradleException("无法删除旧 jar: $jarFile")
+                    }
+                    if (!temp.renameTo(jarFile)) {
+                        throw GradleException("无法替换 jar: $jarFile")
+                    }
+                } finally {
+                    if (temp.exists()) temp.delete()
+                }
+            }
+    }
+}
+
+tasks.register<StripInvalidJarSignaturesTask>("stripReleaseJarSignatures") {
+    jarDirectory.set(layout.buildDirectory.dir("compose/tmp/main-release/proguard"))
+}
+
+tasks.named("proguardReleaseJars") {
+    finalizedBy("stripReleaseJarSignatures")
 }

@@ -44,9 +44,10 @@ jobs:
         uses: android-actions/setup-android@v3
 
       # compileSdk 37（miuix 0.9.2 要求）需要 platforms;android-37，
-      # runner 预装 SDK 未必包含，显式安装
+      # runner 预装 SDK 未必包含；先更新 sdkmanager 索引再安装
       - name: 安装 Android SDK Platform 37
         run: |
+          sdkmanager --update > /dev/null 2>&1 || true
           yes | sdkmanager --licenses > /dev/null 2>&1 || true
           sdkmanager "platforms;android-37" "build-tools;35.0.0"
 
@@ -200,7 +201,19 @@ jobs:
         run: choco install wixtoolset --version=3.11.2 -y --no-progress --allow-downgrade
 
       - name: 构建桌面端 Msi / Exe
+        id: package
         run: .\gradlew.bat :composeApp:packageReleaseDistributionForCurrentOS --stacktrace
+        continue-on-error: true
+
+      # jpackage 的工具 stderr 默认只写 runner 本地文件，这里兜底打印到 workflow 日志
+      - name: 打印 jpackage 工具日志（诊断）
+        if: steps.package.outcome == 'failure'
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path composeApp/build/compose/logs -Recurse -Filter "*.txt" -ErrorAction SilentlyContinue | ForEach-Object {
+            Write-Host "===== $($_.FullName) ====="
+            Get-Content $_.FullName -ErrorAction SilentlyContinue
+          }
 
       - name: 上传 Windows 安装包
         uses: actions/upload-artifact@v4
