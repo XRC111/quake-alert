@@ -274,6 +274,9 @@ tasks.register<StripInvalidJarSignaturesTask>("stripReleaseJarSignatures") {
     jarDirectory.set(layout.buildDirectory.dir("compose/tmp/main-release/proguard"))
 }
 
-tasks.named("proguardReleaseJars") {
-    finalizedBy("stripReleaseJarSignatures")
+// proguardReleaseJars 由 Compose 插件延迟注册，须等所有项目配置完成后再 hook
+gradle.projectsEvaluated {
+    tasks.named("proguardReleaseJars") {
+        finalizedBy("stripReleaseJarSignatures")
+    }
 }
