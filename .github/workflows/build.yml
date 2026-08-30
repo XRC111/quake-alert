@@ -46,8 +46,8 @@ jobs:
       # compileSdk 37（miuix 0.9.2 要求）需要 platforms;android-37。
       # 注意：Android 16 起 Google 仓库包名带 minor 号（platforms;android-37.0），
       # sdkmanager 装完目录可能是 android-37 或 android-37.0（行为不一致），
-      # 且 source.properties 标识 37.0；AGP compileSdk=37 需要整数目录 android-37
-      # 且标识匹配 → 从 android-37.0 复制并修正标识。
+      # 且 Android 17 的 source.properties 无 Package.Path 行，AGP 无法把
+      # android-37 目录识别为 platforms;android-37 → 复制后重写标准标识。
       - name: 安装 Android SDK Platform 37
         run: |
           sdkmanager --update > /dev/null 2>&1 || true
@@ -58,12 +58,15 @@ jobs:
           if [ -f "$SRC/android.jar" ] || [ -f "$DST/android.jar" ]; then
             rm -rf "$DST"
             cp -r "$SRC" "$DST"
-            sed -i.bak 's/^Package.Path=.*/Package.Path=platforms;android-37/' "$DST/source.properties"
-            sed -i.bak 's/^AndroidVersion.ApiLevel=.*/AndroidVersion.ApiLevel=37/' "$DST/source.properties"
-            rm -f "$DST/source.properties.bak"
-            echo "--- fixed android-37 ---"
-            ls "$DST" | head -5
-            grep -E "Package.Path|AndroidVersion.ApiLevel" "$DST/source.properties"
+            cat > "$DST/source.properties" <<'EOF'
+          Pkg.Desc=Android SDK Platform 37
+          Pkg.Revision=1
+          AndroidVersion.ApiLevel=37
+          AndroidVersion.CodeName=REL
+          Package.Path=platforms;android-37
+          EOF
+            echo "--- android-37 source.properties ---"
+            cat "$DST/source.properties"
           else
             echo "WARN: no android-37/android.jar found"
             ls "$ANDROID_HOME/platforms/" || true
