@@ -1,7 +1,5 @@
 package com.quake.alert.data
 
-@file:OptIn(ExperimentalAtomicApi::class)
-
 import com.quake.alert.alert.AlertTrigger
 import com.quake.alert.data.source.CencEqListDecoder
 import com.quake.alert.data.source.WolfxEewDecoder
@@ -21,8 +19,6 @@ import io.ktor.websocket.Frame
 import io.ktor.websocket.close
 import io.ktor.websocket.readReason
 import io.ktor.websocket.readText
-import kotlin.concurrent.atomics.ExperimentalAtomicApi
-import kotlin.concurrent.atomics.atomic
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
@@ -42,6 +38,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.datetime.Clock
 import kotlin.random.Random
 
@@ -147,8 +145,10 @@ class QuakeAggregator(
     /** 转发自 [AlertTrigger.activeAlert]，UI 无需再单独持有 trigger。 */
     val activeAlert: StateFlow<com.quake.alert.alert.ActiveAlert?> = alertTrigger.activeAlert
 
-    // Kotlin 2.4：commonMain 无 JVM 的 synchronized/Volatile，改用 stdlib 原子
-    private val running = atomic(false)
+    // commonMain 无 JVM 的 synchronized/Volatile：start/stop 用 Mutex.tryLock 互斥（幂等），
+    // running 只在锁内读写，无需 volatile
+    private val lifecycleMutex = Mutex()
+    private var running: Boolean = false
 
     private var wsJobs: Map<QuakeSource, Job> = emptyMap()
     private var eqlistJob: Job? = null
@@ -159,27 +159,39 @@ class QuakeAggregator(
 
     /** 幂等启动。重复调用无副作用。 */
     fun start() {
-        if (!running.compareAndSet(false, true)) return
-        wsJobs = config.eewSources.associate { sourceConfig ->
-            sourceConfig.source to internalScope.launch(CoroutineName("ws-${sourceConfig.source.apiId}")) {
-                wolfxLoop(sourceConfig)
+        if (!lifecycleMutex.tryLock()) return
+        try {
+            if (running) return
+            running = true
+            wsJobs = config.eewSources.associate { sourceConfig ->
+                sourceConfig.source to internalScope.launch(CoroutineName("ws-${sourceConfig.source.apiId}")) {
+                    wolfxLoop(sourceConfig)
+                }
             }
+            eqlistJob = internalScope.launch(CoroutineName("eqlist-poll")) { eqlistLoop() }
+            logger("[Aggregator] 已启动 ${config.eewSources.size} 个 EEW 源 + 速报目录轮询")
+        } finally {
+            lifecycleMutex.unlock()
         }
-        eqlistJob = internalScope.launch(CoroutineName("eqlist-poll")) { eqlistLoop() }
-        logger("[Aggregator] 已启动 ${config.eewSources.size} 个 EEW 源 + 速报目录轮询")
     }
 
     /** 停止数据拉取。可再次 [start]。 */
     fun stop() {
-        if (!running.compareAndSet(true, false)) return
-        wsJobs.values.forEach { it.cancel(CancellationException("QuakeAggregator.stop()")) }
-        eqlistJob?.cancel(CancellationException("QuakeAggregator.stop()"))
-        wsJobs = emptyMap()
-        eqlistJob = null
-        _sourceStatus.update { statuses ->
-            statuses.mapValues { it.value.copy(state = ConnectionState.Idle) }
+        if (!lifecycleMutex.tryLock()) return
+        try {
+            if (!running) return
+            running = false
+            wsJobs.values.forEach { it.cancel(CancellationException("QuakeAggregator.stop()")) }
+            eqlistJob?.cancel(CancellationException("QuakeAggregator.stop()"))
+            wsJobs = emptyMap()
+            eqlistJob = null
+            _sourceStatus.update { statuses ->
+                statuses.mapValues { it.value.copy(state = ConnectionState.Idle) }
+            }
+            logger("[Aggregator] 已停止")
+        } finally {
+            lifecycleMutex.unlock()
         }
-        logger("[Aggregator] 已停止")
     }
 
     /** 彻底释放。之后该实例不可再用；[client] 由调用方自行决定是否 close。 */
@@ -384,27 +396,18 @@ class QuakeAggregator(
     }
 
     private var lastFrameAtMap: Map<QuakeSource, Long> = emptyMap()
-    private val lastFrameLock = atomic(false)
+    private val frameMutex = Mutex()
 
-    private inline fun <T> withFrameLock(block: () -> T): T {
-        // 自旋锁：Kotlin 2.4 commonMain 无 synchronized，用 stdlib 原子实现
-        while (!lastFrameLock.compareAndSet(false, true)) { /* spin */ }
-        try {
-            return block()
-        } finally {
-            lastFrameLock.compareAndSet(true, false)
-        }
-    }
-
-    private fun markAlive(source: QuakeSource) {
+    // markAlive/lastFrameAt 都在协程内调用，可用挂起的 withLock
+    private suspend fun markAlive(source: QuakeSource) {
         val now = nowMs()
-        withFrameLock {
+        frameMutex.withLock {
             lastFrameAtMap = lastFrameAtMap + (source to now)
         }
         setStatus(source) { it.copy(lastMessageAt = now) }
     }
 
-    private fun lastFrameAt(source: QuakeSource): Long = withFrameLock {
+    private suspend fun lastFrameAt(source: QuakeSource): Long = frameMutex.withLock {
         lastFrameAtMap[source] ?: 0L
     }
 
