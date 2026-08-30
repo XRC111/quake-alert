@@ -145,7 +145,7 @@ jobs:
       # ------------------------------------------------------------------
       - name: 构建 iOS XCFramework
         if: ${{ github.event.inputs.build_ios != 'false' }}
-        run: ./gradlew :composeApp:assembleXCFramework --stacktrace
+        run: ./gradlew :composeApp:assembleComposeAppXCFramework --stacktrace
 
       # ------------------------------------------------------------------
       # 4) 桌面端：macOS Runner 上产出 DMG
