@@ -8,7 +8,7 @@ Windows / Android / iOS 三端同构，多源 EEW 聚合 + 全屏强提醒。
 
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.1.20-7F52FF?style=flat-square&logo=kotlin)](https://kotlinlang.org/)
 [![Compose Multiplatform](https://img.shields.io/badge/Compose%20Multiplatform-4285F4?style=flat-square)](https://www.jetbrains.com/lp/compose-multiplatform/)
-[![License](https://img.shields.io/badge/License-Apache--2.0-blue?style=flat-square)](./LICENSE)
+[![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](./LICENSE)
 
 </div>
 
@@ -192,7 +192,7 @@ composeApp/src/
 
 ## License
 
-Apache-2.0（见 [LICENSE](./LICENSE)）
+MIT（见 [LICENSE](./LICENSE)）
 
 ## 致谢
 
