@@ -175,9 +175,15 @@ class DefaultAlertTriggerTest {
     // 本地估算集成（可选，默认关闭）
     // ------------------------------------------------------------------
 
-    /** 观测点与震中重合的估算器：估算烈度封顶 12，倒计时 0 */
+    /**
+     * 观测点与震中重合的估算器（[event] 默认震中为 31.2/121.4）。
+     *
+     * 注意坐标必须与 [event] 的默认震中一致：早先这里写的是 31.0/121.0，
+     * 与震中相距约 44km，按 Kawasumi 式估算烈度只有 2.8 度，压不过 3.0 阈值，
+     * 测试名与断言（"本地估算把震级 2.5 顶上阈值"）实际并不成立。
+     */
     private fun fullLocalEstimator() = LocalEstimator(
-        observerProvider = { GeoPoint(31.0, 121.0) },
+        observerProvider = { GeoPoint(31.2, 121.4) },
         enabledProvider = { true },
         now = { 1_000_000_000_000L },
     )
@@ -189,7 +195,7 @@ class DefaultAlertTriggerTest {
             now = { 1_000_000_000_000L },
         )
         // 事件无 API 烈度字段、震级 3.5 低于降级阈值 3.0 的触发条件？不——3.5 >= 3.0 会降级命中。
-        // 改为震级 2.5：只有本地估算烈度（12）能把它顶上阈值。
+        // 改为震级 2.5：只有本地估算烈度（8.35，观测点与震中重合）能把它顶上阈值。
         val decision = trigger.evaluate(event(id = "est", magnitude = 2.5, intensity = null))
         assertTrue(decision.shouldAlert, "无 API 烈度时，本地估算烈度应参与判定: ${decision.reason}")
         assertTrue(decision.reason.contains("本地估算"), decision.reason)

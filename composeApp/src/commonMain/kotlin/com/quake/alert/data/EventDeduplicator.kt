@@ -104,11 +104,19 @@ class EventDeduplicator(
             else -> incoming.placeName
         }
 
+        // mergedSources 只记录"另外的来源"：同源多报不应把自己也算进去，
+        // 否则每次 EEW 复报都会让 mergedSources 从空变成 [自己]，被误判为内容变化
+        val sources = if (incoming.source == current.source) {
+            current.mergedSources
+        } else {
+            (current.mergedSources + incoming.source).distinct()
+        }
+
         return better.copy(
             id = current.id,
             source = current.source,
             placeName = place,
-            mergedSources = (current.mergedSources + incoming.source).distinct(),
+            mergedSources = sources,
             raw = null,
         )
     }
