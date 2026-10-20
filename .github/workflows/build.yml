@@ -40,8 +40,22 @@ jobs:
           distribution: 'zulu'
           java-version: ${{ env.JAVA_VERSION }}
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      # 原 android-actions/setup-android@v3 会执行 `sdkmanager "tools"`，
+      # 但 Google 已下架 tools 包，导致 "Failed to find package 'tools'" 直接失败。
+      # 改为自己装 command-line tools，版本可控。
+      - name: 安装 Android command-line tools
+        run: |
+          set -euo pipefail
+          SDK="$HOME/android-sdk"
+          mkdir -p "$SDK/cmdline-tools"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/cmdline-tools.zip" \
+            https://dl.google.com/android/repository/commandlinetools-mac-11076708_latest.zip
+          unzip -q "$RUNNER_TEMP/cmdline-tools.zip" -d "$SDK/cmdline-tools"
+          rm -rf "$SDK/cmdline-tools/latest"
+          mv "$SDK/cmdline-tools/cmdline-tools" "$SDK/cmdline-tools/latest"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          echo "$SDK/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
 
       # compileSdk 37（miuix 0.9.2 要求）需要 platforms;android-37。
       # 注意：Android 16 起 Google 仓库包名带 minor 号（platforms;android-37.0），
@@ -225,8 +239,16 @@ jobs:
       # jpackage 打包 Exe/Msi 依赖 WiX（candle.exe/light.exe）。
       # windows-latest 预装 WiX 3.14.1，但 jpackage(JDK17) 与 3.14 存在兼容问题，
       # 显式降级到 compose 插件同款 wix311（3.11.2）
+      # Chocolatey 上的 wixtoolset 3.11.2 已不可用（步骤会直接失败），
+      # 改成官方 release 的二进制包，解压后加入 PATH（jpackage 通过 PATH 找 candle/light）。
       - name: 安装 WiX Toolset 3.11
-        run: choco install wixtoolset --version=3.11.2 -y --no-progress --allow-downgrade
+        shell: pwsh
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP "wix311.zip"
+          Invoke-WebRequest -Uri "https://github.com/wixtoolset/wix3/releases/download/wix3112rtm/wix311-binaries.zip" -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath (Join-Path $env:RUNNER_TEMP "wix311") -Force
+          Join-Path $env:RUNNER_TEMP "wix311" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          & (Join-Path $env:RUNNER_TEMP "wix311" "candle.exe") -? | Select-Object -First 1
 
       - name: 构建桌面端 Msi / Exe
         id: package
