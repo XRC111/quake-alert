@@ -39,6 +39,8 @@ class CencEqListDecoderTest {
         assertEquals(10.0, first.depthKm)       // 字符串 "10"
         assertEquals(4.0, first.intensity)      // 测定烈度 "4"
         assertFalse(first.isEew, "目录事件 isEew=false，不触发弹窗")
+        // 2026-08-29 06:36:52 +08:00 —— 无时区时间必须按北京时间解析
+        assertEquals(1787956612000L, first.originTime)
     }
 
     @Test
@@ -55,5 +57,14 @@ class CencEqListDecoderTest {
         val events = decoder.decode(feed)
         // No1 缺经度、No2 缺震级 → 都应被跳过
         assertTrue(events.isEmpty())
+    }
+
+    @Test
+    fun 缺少EventID时不会撞成同一条() {
+        val feed = """{"No1":{"time":"2026-08-29 06:36:52","magnitude":"3.1","latitude":"42.22","longitude":"80.54"},
+                        "No2":{"time":"2026-08-28 13:13:34","magnitude":"5.1","latitude":"29.23","longitude":"105.22"}}"""
+        val events = decoder.decode(feed)
+        assertEquals(2, events.size)
+        assertEquals(2, events.map { it.id }.distinct().size, "缺 EventID 的条目 id 必须互不相同")
     }
 }

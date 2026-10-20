@@ -3,10 +3,6 @@ package com.quake.alert.data.source
 import com.quake.alert.model.QuakeEvent
 import com.quake.alert.model.QuakeSource
 import kotlinx.datetime.Clock
-import kotlinx.datetime.Instant
-import kotlinx.datetime.LocalDateTime
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toInstant
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -36,9 +32,6 @@ class WolfxEewDecoder(
         explicitNulls = false
         isLenient = true
     }
-
-    /** Wolfx 下发的时间为北京时间且通常不带时区后缀，按 Asia/Shanghai 解释。 */
-    private val chinaZone = TimeZone.of("Asia/Shanghai")
 
     /**
      * @return 解析成功的事件；心跳帧、字段不全的畸形帧返回 null（调用方静默丢弃）。
@@ -121,63 +114,14 @@ class WolfxEewDecoder(
     }
 
     /**
-     * 兼容三种时间格式：
-     * 1. ISO-8601 带时区：`2025-08-29T12:34:56+08:00`
-     * 2. 无时区的北京时间：`2025-08-29 12:34:56`
-     * 3. 时间戳（秒或毫秒）
+     * 解析发震时刻。格式兼容与"无时区按北京时间"的判定统一放在 [parseApiTime]。
+     * 解析失败时回退为当前时间，保证事件仍能进入列表。
      */
-    private fun parseWolfxTime(raw: String?): Long {
-        val now = Clock.System.now().toEpochMilliseconds()
-        val text = raw?.trim().orEmpty()
-        if (text.isEmpty()) return now
+    private fun parseWolfxTime(raw: String?): Long =
+        parseApiTime(raw) ?: Clock.System.now().toEpochMilliseconds()
 
-        runCatching {
-            val normalized = text.replace(' ', 'T')
-            val withZone = when {
-                normalized.contains('+') || normalized.endsWith("Z", ignoreCase = true) -> normalized
-                else -> normalized + "Z"
-            }
-            Instant.parse(withZone).toEpochMilliseconds()
-        }.getOrNull()?.let { return it }
-
-        runCatching {
-            LocalDateTime.parse(text.replace(' ', 'T')).toInstant(chinaZone).toEpochMilliseconds()
-        }.getOrNull()?.let { return it }
-
-        text.toLongOrNull()?.let {
-            return if (it > 1_000_000_000_000L) it else it * 1000L
-        }
-
-        return now
-    }
-
-    /**
-     * 解析 API 下发的"预计到达时刻"。
-     * 与 [parseWolfxTime] 相同的时间格式；解析失败返回 null（UI 显示"未知"）。
-     */
-    private fun parseArrivalTime(raw: String?): Long? {
-        val text = raw?.trim().orEmpty()
-        if (text.isEmpty()) return null
-
-        runCatching {
-            val normalized = text.replace(' ', 'T')
-            val withZone = when {
-                normalized.contains('+') || normalized.endsWith("Z", ignoreCase = true) -> normalized
-                else -> normalized + "Z"
-            }
-            Instant.parse(withZone).toEpochMilliseconds()
-        }.getOrNull()?.let { return it }
-
-        runCatching {
-            LocalDateTime.parse(text.replace(' ', 'T')).toInstant(chinaZone).toEpochMilliseconds()
-        }.getOrNull()?.let { return it }
-
-        text.toLongOrNull()?.let {
-            return if (it > 1_000_000_000_000L) it else it * 1000L
-        }
-
-        return null
-    }
+    /** 解析 API 下发的"预计到达时刻"；解析失败返回 null（UI 显示"未知"）。 */
+    private fun parseArrivalTime(raw: String?): Long? = parseApiTime(raw)
 
     private companion object {
         const val RAW_LIMIT = 2000
@@ -212,5 +156,9 @@ private fun JsonObject.firstInt(vararg keys: String): Int? =
 
 private fun JsonObject.firstBoolean(vararg keys: String): Boolean? =
     keys.firstNotNullOfOrNull { key ->
-        (this[key] as? JsonPrimitive)?.content?.trim()?.toBooleanStrictOrNull()
+        when ((this[key] as? JsonPrimitive)?.content?.trim()?.lowercase()) {
+            "true", "1", "yes" -> true
+            "false", "0", "no" -> false
+            else -> null
+        }
     }

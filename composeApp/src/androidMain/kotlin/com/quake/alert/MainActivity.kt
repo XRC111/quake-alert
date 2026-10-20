@@ -7,11 +7,13 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.activity.result.contract.ActivityResultContracts
 import com.quake.alert.app.ContextHolder
 import com.quake.alert.notification.QuakeNotifier
 import com.quake.alert.platform.AlertEffects
 import com.quake.alert.ui.QuakeApp
+import com.quake.alert.ui.QuakeViewModel
 
 class MainActivity : ComponentActivity() {
 
@@ -21,6 +23,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private val effects by lazy { AlertEffects() }
+
+    // 交给 Activity 的 ViewModelStore 持有：Activity 真正销毁时会走 onCleared()，
+    // 聚合器与 HttpClient 才会被关闭（之前用 remember 创建，onCleared 永远不会被调用）
+    private val quakeViewModel: QuakeViewModel by viewModels()
 
     private val requestNotificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* 拒绝则退化为仅应用内弹窗 */ }
@@ -45,7 +51,7 @@ class MainActivity : ComponentActivity() {
             if (fromAlert) {
                 effects.wakeScreen()
             }
-            QuakeApp()
+            QuakeApp(viewModel = quakeViewModel)
         }
     }
 

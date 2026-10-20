@@ -155,4 +155,46 @@ class WolfxEewDecoderTest {
         assertNotNull(garbage)
         assertTrue(garbage.originTime > 0L)
     }
+
+    @Test
+    fun 无时区时间按北京时间解析() {
+        val event = decoder.decode(
+            """{"id":"tz1","Magnitude":4.0,"Latitude":30.0,"Longitude":100.0,"OriginTime":"2026-08-29 06:07:28"}"""
+        )
+        assertNotNull(event)
+        // 2026-08-29 06:07:28 +08:00
+        assertEquals(1787954848000L, event.originTime, "无时区应按 UTC+8 解释，而不是 UTC")
+    }
+
+    @Test
+    fun 带时区的时间按其时区解析() {
+        val utc = decoder.decode(
+            """{"id":"tz2","Magnitude":4.0,"Latitude":30.0,"Longitude":100.0,"OriginTime":"2026-08-29T06:07:28Z"}"""
+        )
+        assertNotNull(utc)
+        assertEquals(1787983648000L, utc.originTime, "带 Z 的时间应按 UTC 解释")
+
+        val beijing = decoder.decode(
+            """{"id":"tz3","Magnitude":4.0,"Latitude":30.0,"Longitude":100.0,"OriginTime":"2026-08-29T06:07:28+08:00"}"""
+        )
+        assertNotNull(beijing)
+        assertEquals(1787954848000L, beijing.originTime)
+    }
+
+    @Test
+    fun 到达时间同样按北京时间解析() {
+        val event = decoder.decode(
+            """{"id":"tz4","Magnitude":4.0,"Latitude":30.0,"Longitude":100.0,"ArrivalTime":"2026-08-29 06:08:00"}"""
+        )
+        assertNotNull(event)
+        assertEquals(1787954880000L, event.arrivalTime)
+    }
+
+    @Test
+    fun isCancel兼容数字1() {
+        assertNull(
+            decoder.decode("""{"ID":"c1","Magnitude":4.0,"Latitude":30.0,"Longitude":100.0,"isCancel":1}"""),
+            "isCancel=1 也应识别为取消帧",
+        )
+    }
 }

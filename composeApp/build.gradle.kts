@@ -100,6 +100,8 @@ kotlin {
         androidMain.dependencies {
             implementation(compose.preview)
             implementation(libs.androidx.activity.compose)
+            // by viewModels()：交给 Activity 的 ViewModelStore 持有，确保 onCleared() 会被调用
+            implementation(libs.androidx.activity.ktx)
             implementation(libs.androidx.core.ktx)
             // Ktor Android 引擎
             implementation(libs.ktor.client.okhttp)

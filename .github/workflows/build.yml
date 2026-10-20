@@ -125,7 +125,14 @@ jobs:
           } >> "$GITHUB_ENV"
 
       # ------------------------------------------------------------------
-      # 1) 编译校验（commonMain 全平台 KLib 编译）
+      # 1) 单元测试（commonTest 在 Desktop JVM 上执行）
+      #    以前 CI 只编译不跑测试，去重/解码/规则引擎的回归无人拦截
+      # ------------------------------------------------------------------
+      - name: 单元测试（Desktop JVM）
+        run: ./gradlew :composeApp:desktopTest --stacktrace
+
+      # ------------------------------------------------------------------
+      # 2) 编译校验（commonMain 全平台 KLib 编译）
       # ------------------------------------------------------------------
       - name: 全平台编译校验
         run: ./gradlew :composeApp:compileKotlinDesktop :composeApp:compileKotlinIosArm64 :composeApp:compileKotlinIosSimulatorArm64 --stacktrace

@@ -31,6 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -96,23 +97,37 @@ fun QuakeApp(
         }
     }
 
+    // 预警期间用户可能改设置，用 rememberUpdatedState 保证副作用里读到最新值
+    val currentSettings by rememberUpdatedState(settings)
+
     // 预警状态变化 → 触发平台副作用（亮屏 / 置顶 / 声音 / 震动 / 通知）
-    LaunchedEffect(alert?.id, settings.soundEnabled, settings.vibrationEnabled) {
+    // 只用 alert.id 做 key：否则拨动"报警音"开关会把整段副作用重跑一遍、重新播放报警音
+    LaunchedEffect(alert?.id) {
         val current = alert
         if (current != null) {
             effects.wakeScreen()
             effects.setWindowAlwaysOnTop(true)
-            if (settings.soundEnabled) effects.playAlarm()
-            if (settings.vibrationEnabled) effects.vibrate()
+            if (currentSettings.soundEnabled) effects.playAlarm()
+            if (currentSettings.vibrationEnabled) effects.vibrate()
+            val eta = current.countdownSeconds
             effects.showNotification(
                 title = "地震预警 · 烈度 ${formatIntensity(current.localIntensity ?: current.event.intensity)}",
-                text = "${current.event.placeName} · ${formatCountdown(current.countdownSeconds)}后可能到达",
+                text = if (eta == null) {
+                    "${current.event.placeName} · 到达时间未知"
+                } else {
+                    "${current.event.placeName} · ${formatCountdown(eta)}后可能到达"
+                },
             )
         } else {
             effects.stopAlarm()
             effects.setWindowAlwaysOnTop(false)
             effects.cancelNotification()
         }
+    }
+
+    // 预警期间关掉声音 → 立刻停
+    LaunchedEffect(settings.soundEnabled) {
+        if (!settings.soundEnabled && alert != null) effects.stopAlarm()
     }
 
     QuakeTheme {

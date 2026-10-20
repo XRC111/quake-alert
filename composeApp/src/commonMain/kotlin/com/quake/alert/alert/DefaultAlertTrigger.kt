@@ -18,6 +18,8 @@ import kotlinx.coroutines.flow.asStateFlow
  * 2. 30 分钟窗口内按事件 ID 去重，抑制重复弹窗；烈度/震级显著上调时允许升级复报。
  * 3. 倒计时优先级：**API 字段**（`remainTimeSec` / `arrivalTime`）→ 本地估算（仅开启时）→ null。
  */
+private const val MAX_HISTORY = 200
+
 class DefaultAlertTrigger(
     rules: AlertRuleConfig = AlertRuleConfig(),
     private val localEstimator: LocalEstimator? = null,
@@ -86,6 +88,7 @@ class DefaultAlertTrigger(
             lastTriggeredAt = timestamp,
             hits = 1,
         )
+        pruneHistory()
 
         val level = classify(event, rules, effectiveIntensity)
         // 倒计时：API 字段优先，本地估算兜底
@@ -168,6 +171,15 @@ class DefaultAlertTrigger(
             value >= rules.warningThreshold -> AlertLevel.WARNING
             else -> AlertLevel.INFO
         }
+    }
+
+    /** 长期运行会累积每一次地震的触发记录，超过上限后丢弃最旧的，避免无界增长 */
+    private fun pruneHistory() {
+        if (history.size <= MAX_HISTORY) return
+        history.entries
+            .sortedBy { it.value.lastTriggeredAt }
+            .take(history.size - MAX_HISTORY)
+            .forEach { history.remove(it.key) }
     }
 
     private fun describe(event: QuakeEvent): String = buildString {
