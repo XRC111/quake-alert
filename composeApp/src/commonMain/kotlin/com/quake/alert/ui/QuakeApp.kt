@@ -125,9 +125,11 @@ fun QuakeApp(
         }
     }
 
-    // 预警期间关掉声音 → 立刻停
+    // 预警期间开关声音 → 立即生效（开则播、关则停），不需要等下一次触发
     LaunchedEffect(settings.soundEnabled) {
-        if (!settings.soundEnabled && alert != null) effects.stopAlarm()
+        val current = alert ?: return@LaunchedEffect
+        if (settings.soundEnabled) effects.playAlarm() else effects.stopAlarm()
+        // 只在用户拨动开关时执行；首次进入由上面的 alert.id 副作用负责
     }
 
     QuakeTheme {
