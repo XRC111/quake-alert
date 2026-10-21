@@ -59,8 +59,8 @@ jobs:
 
       # compileSdk 37（miuix 0.9.2 要求）需要 platforms;android-37。
       # 注意：Android 16 起 Google 仓库的包名带 minor 号（platforms;android-37.0），
-      # 而 AGP 按 compileSdk=37 去找 `platforms/android-37`；两者目录名不一致，
-      # 所以装完后复制目录并重写 source.properties，让 AGP 能识别。
+      # 而 AGP 按 compileSdk=37 去找 hash `android-37`；两者对不上，
+      # 所以装完后复制目录，并重写 package.xml / source.properties 让 AGP 能识别。
       #
       # 这里不用 heredoc：YAML 块标量的缩进会让终止符 `EOF` 失效，
       # 后续命令会被当成 heredoc 内容吞掉（且不报错），因此改用 printf。
@@ -73,12 +73,27 @@ jobs:
 
           sdkmanager "platforms;android-37.0" "build-tools;37.0.0" \
             || sdkmanager "platforms;android-37" "build-tools;37.0.0"
+          # AGP 8.13 默认 build-tools 35.0.0；不装的话它会在构建期自己下载，
+          # 这里提前装好，避免无谓等待（失败也无所谓，licenses 已接受）
+          sdkmanager "build-tools;35.0.0" > /dev/null || true
 
           SRC="$ANDROID_HOME/platforms/android-37.0"
           DST="$ANDROID_HOME/platforms/android-37"
           if [ -f "$SRC/android.jar" ]; then
             rm -rf "$DST"
             cp -r "$SRC" "$DST"
+
+            # 关键：AGP 认的是 package.xml 里的元数据，不是目录名。
+            # 官方平台包的 api-level 写的是 "37.0"（带 minor），sdklib 会算成
+            # hash "android-37.0"；而 compileSdk = 37 请求的是 "android-37"，
+            # 两者对不上 → Failed to find target with hash string 'android-37'。
+            # 这里把 path / api-level 改回无 minor 形式，minor 元素一并删掉。
+            # 用 sed -i.bak：BSD/GNU sed 行为一致（-i '' 只在 BSD 成立）。
+            sed -i.bak -e 's#platforms;android-37\.0#platforms;android-37#g' \
+                       -e 's#<api-level>37\.0</api-level>#<api-level>37</api-level>#g' \
+                       -e '/<minor-api-level>/d' "$DST/package.xml"
+            rm -f "$DST/package.xml.bak"
+
             printf '%s\n' \
               'Pkg.Desc=Android SDK Platform 37' \
               'Pkg.Revision=1' \
@@ -95,6 +110,8 @@ jobs:
 
           echo "--- platforms ---"
           ls "$ANDROID_HOME/platforms"
+          echo "--- android-37/package.xml 关键字段 ---"
+          grep -E "localPackage path|api-level|minor-api-level" "$DST/package.xml" || true
           echo "--- android-37/source.properties ---"
           cat "$DST/source.properties"
 
