@@ -93,9 +93,16 @@ actual class AlertEffects {
         } else {
             ctx.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
         }
-        vibrator?.vibrate(
-            VibrationEffect.createWaveform(longArrayOf(0, 700, 300, 700, 300, 700), 0)
-        )
+        // VibrationEffect 是 API 26 才有的类，minSdk 24/25 上直接调用会 NoSuchMethodError
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator?.vibrate(
+                    VibrationEffect.createWaveform(longArrayOf(0, 700, 300, 700, 300, 700), 0)
+                )
+            } else {
+                vibrator?.vibrate(longArrayOf(0, 700, 300, 700, 300, 700), 0)
+            }
+        }
     }
 
     actual fun wakeScreen() {

@@ -40,37 +40,46 @@ jobs:
           distribution: 'zulu'
           java-version: ${{ env.JAVA_VERSION }}
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      # 原 android-actions/setup-android@v3 会执行 `sdkmanager "tools"`，
+      # 但 Google 已下架 tools 包，导致 "Failed to find package 'tools'" 直接失败。
+      # 改为自己装 command-line tools，版本可控。
+      - name: 安装 Android command-line tools
+        run: |
+          set -euo pipefail
+          SDK="$HOME/android-sdk"
+          mkdir -p "$SDK/cmdline-tools"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/cmdline-tools.zip" \
+            https://dl.google.com/android/repository/commandlinetools-mac-11076708_latest.zip
+          unzip -q "$RUNNER_TEMP/cmdline-tools.zip" -d "$SDK/cmdline-tools"
+          rm -rf "$SDK/cmdline-tools/latest"
+          mv "$SDK/cmdline-tools/cmdline-tools" "$SDK/cmdline-tools/latest"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          echo "$SDK/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
 
-      # compileSdk 37（miuix 0.9.2 要求）需要 platforms;android-37。
-      # 注意：Android 16 起 Google 仓库包名带 minor 号（platforms;android-37.0），
-      # sdkmanager 装完目录可能是 android-37 或 android-37.0（行为不一致），
-      # 且 Android 17 的 source.properties 无 Package.Path 行，AGP 无法把
-      # android-37 目录识别为 platforms;android-37 → 复制后重写标准标识。
+      # compileSdk 37（miuix 0.9.2 要求）对应仓库里的 platforms;android-37.0。
+      # 构建脚本已声明 compileSdkMinor = 0，AGP 会按 hash "android-37.0" 查找，
+      # 因此这里只要把包装上即可，不再改写目录名/package.xml。
+      # 注意：YAML 块标量里的 heredoc 终止符不能缩进，否则后续命令会被吞掉；
+      # 这里全程用 printf / 普通命令，避免该陷阱。
       - name: 安装 Android SDK Platform 37
         run: |
-          sdkmanager --update > /dev/null 2>&1 || true
+          set -euo pipefail
+          # sdkmanager 读 license 会等待输入；`yes` 退出产生的 SIGPIPE 在 pipefail 下
+          # 会被当成失败，所以显式忽略。
           yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "platforms;android-37.0" "build-tools;35.0.0" > /dev/null 2>&1 || true
-          SRC="$ANDROID_HOME/platforms/android-37.0"
-          DST="$ANDROID_HOME/platforms/android-37"
-          if [ -f "$SRC/android.jar" ] || [ -f "$DST/android.jar" ]; then
-            rm -rf "$DST"
-            cp -r "$SRC" "$DST"
-            cat > "$DST/source.properties" <<'EOF'
-          Pkg.Desc=Android SDK Platform 37
-          Pkg.Revision=1
-          AndroidVersion.ApiLevel=37
-          AndroidVersion.CodeName=REL
-          Package.Path=platforms;android-37
-          EOF
-            echo "--- android-37 source.properties ---"
-            cat "$DST/source.properties"
-          else
-            echo "WARN: no android-37/android.jar found"
-            ls "$ANDROID_HOME/platforms/" || true
+
+          sdkmanager "platforms;android-37.0" "build-tools;37.0.0"
+          # AGP 8.13 默认 build-tools 35.0.0，提前装好省一次下载
+          sdkmanager "build-tools;35.0.0" > /dev/null || true
+
+          if [ ! -f "$ANDROID_HOME/platforms/android-37.0/android.jar" ]; then
+            echo "::error::platforms;android-37.0 安装失败（缺 android.jar）"
+            ls -la "$ANDROID_HOME/platforms" || true
+            exit 1
           fi
+          echo "--- platforms ---"
+          ls "$ANDROID_HOME/platforms"
 
       - name: Setup Gradle (缓存 + 构建扫描)
         uses: gradle/actions/setup-gradle@v4
@@ -125,7 +134,14 @@ jobs:
           } >> "$GITHUB_ENV"
 
       # ------------------------------------------------------------------
-      # 1) 编译校验（commonMain 全平台 KLib 编译）
+      # 1) 单元测试（commonTest 在 Desktop JVM 上执行）
+      #    以前 CI 只编译不跑测试，去重/解码/规则引擎的回归无人拦截
+      # ------------------------------------------------------------------
+      - name: 单元测试（Desktop JVM）
+        run: ./gradlew :composeApp:desktopTest --stacktrace
+
+      # ------------------------------------------------------------------
+      # 2) 编译校验（commonMain 全平台 KLib 编译）
       # ------------------------------------------------------------------
       - name: 全平台编译校验
         run: ./gradlew :composeApp:compileKotlinDesktop :composeApp:compileKotlinIosArm64 :composeApp:compileKotlinIosSimulatorArm64 --stacktrace
@@ -218,8 +234,16 @@ jobs:
       # jpackage 打包 Exe/Msi 依赖 WiX（candle.exe/light.exe）。
       # windows-latest 预装 WiX 3.14.1，但 jpackage(JDK17) 与 3.14 存在兼容问题，
       # 显式降级到 compose 插件同款 wix311（3.11.2）
+      # Chocolatey 上的 wixtoolset 3.11.2 已不可用（步骤会直接失败），
+      # 改成官方 release 的二进制包，解压后加入 PATH（jpackage 通过 PATH 找 candle/light）。
       - name: 安装 WiX Toolset 3.11
-        run: choco install wixtoolset --version=3.11.2 -y --no-progress --allow-downgrade
+        shell: pwsh
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP "wix311.zip"
+          Invoke-WebRequest -Uri "https://github.com/wixtoolset/wix3/releases/download/wix3112rtm/wix311-binaries.zip" -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath (Join-Path $env:RUNNER_TEMP "wix311") -Force
+          Join-Path $env:RUNNER_TEMP "wix311" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          & (Join-Path $env:RUNNER_TEMP "wix311" "candle.exe") -? | Select-Object -First 1
 
       - name: 构建桌面端 Msi / Exe
         id: package

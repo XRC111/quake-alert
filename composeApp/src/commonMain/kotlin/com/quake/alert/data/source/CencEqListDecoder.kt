@@ -3,10 +3,6 @@ package com.quake.alert.data.source
 import com.quake.alert.model.QuakeEvent
 import com.quake.alert.model.QuakeSource
 import kotlinx.datetime.Clock
-import kotlinx.datetime.Instant
-import kotlinx.datetime.LocalDateTime
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toInstant
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -30,8 +26,6 @@ class CencEqListDecoder(
         isLenient = true
     }
 
-    private val chinaZone = TimeZone.of("Asia/Shanghai")
-
     /** @return 解析出的目录事件列表；整体失败返回空列表（不中断轮询）。 */
     fun decode(raw: String): List<QuakeEvent> {
         if (raw.isBlank()) return emptyList()
@@ -48,17 +42,26 @@ class CencEqListDecoder(
             val latitude = obj.stringOf("latitude", "Latitude")?.toDoubleOrNull() ?: return@mapNotNull null
             val longitude = obj.stringOf("longitude", "Longitude")?.toDoubleOrNull() ?: return@mapNotNull null
 
-            val eventId = obj.stringOf("EventID", "eventId") ?: "unknown"
+            val eventId = obj.stringOf("EventID", "eventId")
             val place = obj.stringOf("placeName", "place", "location", "Location") ?: "未知区域"
+            val originTime = parseApiTime(obj.stringOf("time", "Time", "OriginTime")) ?: now
+
+            // 没有 EventID 时用"时刻+坐标+震级"兜底：否则所有缺 ID 的条目都会撞成同一个 id，
+            // 被去重器合并成一条。
+            val id = if (eventId != null) {
+                "${QuakeSource.CENC_EQLIST.apiId}-$eventId"
+            } else {
+                "${QuakeSource.CENC_EQLIST.apiId}-${originTime}_${latitude}_${longitude}_$magnitude"
+            }
 
             QuakeEvent(
-                id = "${QuakeSource.CENC_EQLIST.apiId}-$eventId",
+                id = id,
                 source = QuakeSource.CENC_EQLIST,
                 magnitude = magnitude,
                 latitude = latitude,
                 longitude = longitude,
                 placeName = place,
-                originTime = parseTime(obj.stringOf("time", "Time", "OriginTime"), now),
+                originTime = originTime,
                 receivedAt = now,
                 depthKm = obj.stringOf("depth", "Depth")?.toDoubleOrNull(),
                 isEew = false,
@@ -66,29 +69,6 @@ class CencEqListDecoder(
                 raw = null,
             )
         }
-    }
-
-    private fun parseTime(raw: String?, fallback: Long): Long {
-        val text = raw?.trim().orEmpty()
-        if (text.isEmpty()) return fallback
-
-        runCatching {
-            val normalized = text.replace(' ', 'T')
-            val withZone = when {
-                normalized.contains('+') || normalized.endsWith("Z", ignoreCase = true) -> normalized
-                else -> normalized + "Z"
-            }
-            Instant.parse(withZone).toEpochMilliseconds()
-        }.getOrNull()?.let { return it }
-
-        runCatching {
-            LocalDateTime.parse(text.replace(' ', 'T')).toInstant(chinaZone).toEpochMilliseconds()
-        }.getOrNull()?.let { return it }
-
-        text.toLongOrNull()?.let {
-            return if (it > 1_000_000_000_000L) it else it * 1000L
-        }
-        return fallback
     }
 
     private fun JsonObject.stringOf(vararg keys: String): String? =

@@ -26,7 +26,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.BufferOverflow
-import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -42,6 +41,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.datetime.Clock
 import kotlin.random.Random
+import kotlin.time.TimeMark
+import kotlin.time.TimeSource
 
 /** 单个 EEW WebSocket 源配置。 */
 data class EewSourceConfig(
@@ -114,6 +115,8 @@ class QuakeAggregator(
 ) {
     private val logger: (String) -> Unit = config.logger
     private val deduplicator = EventDeduplicator()
+    /** 去重器与触发器的历史都是普通集合，5 条数据链路会并发写，必须串行化 */
+    private val eventMutex = Mutex()
     private val eqlistDecoder = CencEqListDecoder(logger)
     private val eewDecoders = config.eewSources.associate { it.source to WolfxEewDecoder(it.source, logger) }
 
@@ -202,10 +205,14 @@ class QuakeAggregator(
 
     /** 清空实时列表与历史（不影响连接与预警状态）。 */
     fun clearHistory() {
-        _history.value = emptyList()
-        _fullHistory.value = emptyList()
-        deduplicator.clear()
-        logger("[Aggregator] 事件列表已清空")
+        internalScope.launch {
+            eventMutex.withLock {
+                _history.value = emptyList()
+                _fullHistory.value = emptyList()
+                deduplicator.clear()
+                logger("[Aggregator] 事件列表已清空")
+            }
+        }
     }
 
     /** 用户点击"我已安全"。 */
@@ -230,6 +237,7 @@ class QuakeAggregator(
                     )
                 }
 
+                val sessionStart = nowMs()
                 client.webSocket(
                     method = HttpMethod.Get,
                     host = sourceConfig.host,
@@ -253,7 +261,9 @@ class QuakeAggregator(
                     }
                     val decoder = eewDecoders.getValue(source)
                     try {
-                        incoming.consumeEach { frame ->
+                        // 用 for + break：consumeEach 里的 return@consumeEach 只是跳过当前帧，
+                        // 并不会结束会话
+                        for (frame in incoming) {
                             when (frame) {
                                 is Frame.Text -> {
                                     markAlive(source)
@@ -267,7 +277,7 @@ class QuakeAggregator(
                                 is Frame.Close -> {
                                     // readReason() 是 FrameCommonKt 顶层扩展，需 import io.ktor.websocket.readReason
                                     logger("[${source.apiId}] 服务端关闭连接: ${frame.readReason()?.message}")
-                                    return@consumeEach
+                                    break
                                 }
 
                                 else -> Unit // Ping 由 Ktor 自动应答
@@ -278,6 +288,9 @@ class QuakeAggregator(
                     }
                 }
 
+                // 短命会话（<10s）视为一次失败尝试，避免"连上即被关"导致 1 秒级重连风暴；
+                // 长时间正常会话结束后则重置计数，立即重连。
+                attempt = if (nowMs() - sessionStart < 10_000L) attempt + 1 else 0
                 logger("[${source.apiId}] 会话结束，准备重连")
             } catch (ce: CancellationException) {
                 throw ce
@@ -305,7 +318,7 @@ class QuakeAggregator(
     private suspend fun DefaultClientWebSocketSession.idleWatchdog(source: QuakeSource) {
         while (currentCoroutineContext().isActive) {
             delay(config.wolfxIdleCheckIntervalMs)
-            val idle = nowMs() - lastFrameAt(source)
+            val idle = idleMillis(source)
             if (idle > config.wolfxIdleTimeoutMs) {
                 logger("[${source.apiId}] ${idle}ms 未收到任何帧，判定为假连接，主动断开")
                 runCatching {
@@ -358,29 +371,33 @@ class QuakeAggregator(
     // ------------------------------------------------------------------
 
     private suspend fun onEvent(rawEvent: QuakeEvent) {
-        val resolved = deduplicator.resolve(rawEvent)
-        val event = resolved.event
+        eventMutex.withLock {
+            val resolved = deduplicator.resolve(rawEvent)
+            // 速报目录每 30s 会把同一批事件再拉一遍：内容没变就不重复投递、不重复判定
+            if (!resolved.isNew && !resolved.changed) return
+            val event = resolved.event
 
-        // 实时列表（key 为 canonical id，就地覆盖）
-        _history.update { list ->
-            (list.filterNot { it.id == event.id } + event)
-                .sortedByDescending { it.sortKey() }
-                .take(config.historyLimit)
-        }
+            // 实时列表（key 为 canonical id，就地覆盖）
+            _history.update { list ->
+                (list.filterNot { it.id == event.id } + event)
+                    .sortedByDescending { it.sortKey() }
+                    .take(config.historyLimit)
+            }
 
-        // 历史（查看历史用，容量更大）
-        _fullHistory.update { list ->
-            (list.filterNot { it.id == event.id } + event)
-                .sortedByDescending { it.sortKey() }
-                .take(config.fullHistoryLimit)
-        }
+            // 历史（查看历史用，容量更大）
+            _fullHistory.update { list ->
+                (list.filterNot { it.id == event.id } + event)
+                    .sortedByDescending { it.sortKey() }
+                    .take(config.fullHistoryLimit)
+            }
 
-        _events.emit(event)
+            _events.emit(event)
 
-        // 规则引擎判定：仅 EEW 预警事件参与弹窗；命中且未被去重抑制时 activeAlert 更新
-        val decision = alertTrigger.evaluate(event)
-        if (decision.shouldAlert) {
-            logger("[Aggregator] 已触发预警：${decision.alert?.id}")
+            // 规则引擎判定：仅 EEW 预警事件参与弹窗；命中且未被去重抑制时 activeAlert 更新
+            val decision = alertTrigger.evaluate(event)
+            if (decision.shouldAlert) {
+                logger("[Aggregator] 已触发预警：${decision.alert?.id}")
+            }
         }
     }
 
@@ -395,20 +412,19 @@ class QuakeAggregator(
         }
     }
 
-    private var lastFrameAtMap: Map<QuakeSource, Long> = emptyMap()
+    private val lastFrameAt = mutableMapOf<QuakeSource, TimeMark>()
     private val frameMutex = Mutex()
 
-    // markAlive/lastFrameAt 都在协程内调用，可用挂起的 withLock
+    // 用单调时钟记"最后收帧时刻"：系统时间被 NTP 校正时不会误判为超时
     private suspend fun markAlive(source: QuakeSource) {
-        val now = nowMs()
-        frameMutex.withLock {
-            lastFrameAtMap = lastFrameAtMap + (source to now)
-        }
-        setStatus(source) { it.copy(lastMessageAt = now) }
+        val mark = TimeSource.Monotonic.markNow()
+        val displayNow = nowMs()
+        frameMutex.withLock { lastFrameAt[source] = mark }
+        setStatus(source) { it.copy(lastMessageAt = displayNow) }
     }
 
-    private suspend fun lastFrameAt(source: QuakeSource): Long = frameMutex.withLock {
-        lastFrameAtMap[source] ?: 0L
+    private suspend fun idleMillis(source: QuakeSource): Long = frameMutex.withLock {
+        lastFrameAt[source]?.elapsedNow()?.inWholeMilliseconds ?: Long.MAX_VALUE
     }
 
     /** 指数退避 + 抖动重试（HTTP 用）。 */

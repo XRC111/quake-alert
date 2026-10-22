@@ -101,4 +101,32 @@ class EventDeduplicatorTest {
         assertTrue(sc.mergedSources.contains(QuakeSource.SC_EEW))
         assertTrue(cq.mergedSources.containsAll(listOf(QuakeSource.SC_EEW, QuakeSource.CQ_EEW)))
     }
+
+    @Test
+    fun 低报数晚到不覆盖高报数() {
+        val d = EventDeduplicator()
+        d.resolve(event("e-1", QuakeSource.SC_EEW, 4.0, serial = 1))
+        val top = d.resolve(event("e-1", QuakeSource.SC_EEW, 5.0, serial = 3, intensity = 6.0))
+        assertEquals(3, top.event.updateSerial)
+
+        // 网络乱序：第 2 报晚于第 3 报到达，不得把信息量更大的第 3 报降级
+        val late = d.resolve(event("e-1", QuakeSource.SC_EEW, 4.2, serial = 2, intensity = 5.0))
+        assertEquals(3, late.event.updateSerial)
+        assertEquals(5.0, late.event.magnitude)
+        assertEquals(6.0, late.event.intensity)
+    }
+
+    @Test
+    fun 内容未变化时changed为false() {
+        val d = EventDeduplicator()
+        val first = event("x-1", QuakeSource.CENC_EEW, 5.0, serial = 2, intensity = 5.0)
+        assertTrue(d.resolve(first).changed, "首次出现应标记为变化")
+
+        // 速报目录每 30s 重复拉取：只有 receivedAt 变，内容没变
+        val again = first.copy(receivedAt = first.receivedAt + 30_000L)
+        assertFalse(d.resolve(again).changed, "内容未变化不应重复投递")
+
+        val upgraded = first.copy(magnitude = 5.4, updateSerial = 3, receivedAt = first.receivedAt + 60_000L)
+        assertTrue(d.resolve(upgraded).changed, "报数与震级变化应标记为变化")
+    }
 }

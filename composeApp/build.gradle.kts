@@ -100,6 +100,8 @@ kotlin {
         androidMain.dependencies {
             implementation(compose.preview)
             implementation(libs.androidx.activity.compose)
+            // by viewModels()：交给 Activity 的 ViewModelStore 持有，确保 onCleared() 会被调用
+            implementation(libs.androidx.activity.ktx)
             implementation(libs.androidx.core.ktx)
             // Ktor Android 引擎
             implementation(libs.ktor.client.okhttp)
@@ -122,6 +124,10 @@ kotlin {
 android {
     namespace = "com.quake.alert"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
+    // API 37 在 Google 仓库里只有带 minor 的包（platforms;android-37.0）。
+    // 不声明 minor 时 AGP 会去找 hash "android-37"，而实际安装的是 "android-37.0"，
+    // 报错：Failed to find target with hash string 'android-37'。
+    compileSdkMinor = 0
 
     defaultConfig {
         applicationId = "com.quake.alert"

@@ -16,16 +16,28 @@ import com.quake.alert.model.QuakeEvent
  *
  * ## 合并策略
  * - canonical ID 采用**首个来源事件的原始 ID**（列表 key 稳定）；
- * - 保留"更优"版本：报数更高 > 震级更大 > 后到者；
+ * - 保留"更优"版本：**报数更高 > 震级更大 > 后到者**（低报数不会覆盖高报数）；
  * - [QuakeEvent.mergedSources] 累积合并进来的其他源，UI 可见"多源冗余"。
+ *
+ * ## 并发
+ * 本类不是线程安全的。调用方（聚合器）必须串行调用 [resolve] / [clear]。
  */
 class EventDeduplicator(
     private val originTimeToleranceMs: Long = 2 * 60 * 1000L,
     private val locationToleranceKm: Double = 35.0,
+    /** 最多保留多少个 canonical 事件，超出后丢弃最早插入的，避免长期运行内存无界增长 */
+    private val maxEntries: Int = 1000,
 ) {
     data class Result(
         val event: QuakeEvent,
+        /** 首次出现（新增进列表） */
         val isNew: Boolean,
+        /**
+         * 相对上一次同 canonical 事件，内容是否真的变了（报数/震级/烈度/到达时间/来源集合等）。
+         * 速报目录每 30s 会把同一批事件再拉一遍，`changed=false` 时调用方应跳过重复的
+         * 事件流投递与规则判定。
+         */
+        val changed: Boolean,
     )
 
     /** canonicalId -> 当前保留的事件 */
@@ -34,27 +46,32 @@ class EventDeduplicator(
     /** 原始事件 ID -> canonicalId（同源 EEW 多报快速命中） */
     private val idIndex = HashMap<String, String>()
 
-    /** @return 去重/合并后的事件。isNew=true 表示首次出现（新增进列表），false 表示就地覆盖。 */
+    /** @return 去重/合并后的事件。 */
     fun resolve(incoming: QuakeEvent): Result {
         // 1) 同源 EEW 多报：原始 ID 直接命中
         idIndex[incoming.id]?.let { canonicalId ->
             entries[canonicalId]?.let { existing ->
-                return Result(merge(existing, incoming), isNew = false)
+                val merged = merge(existing, incoming)
+                // 必须写回：否则下一次多报仍与最旧版本比较，会出现"低报数覆盖高报数"
+                entries[canonicalId] = merged
+                return Result(merged, isNew = false, changed = isContentChanged(existing, merged))
             }
         }
 
         // 2) 跨源同震：线性扫描已有事件（事件量小，每日个位数）
         entries.values.firstOrNull { existing -> isSameQuake(existing, incoming) }?.let { existing ->
             val canonicalId = existing.id
+            val merged = merge(existing, incoming)
             idIndex[incoming.id] = canonicalId
-            entries[canonicalId] = merge(existing, incoming)
-            return Result(entries.getValue(canonicalId), isNew = false)
+            entries[canonicalId] = merged
+            return Result(merged, isNew = false, changed = isContentChanged(existing, merged))
         }
 
         // 3) 全新事件
         entries[incoming.id] = incoming
         idIndex[incoming.id] = incoming.id
-        return Result(incoming, isNew = true)
+        pruneIfNeeded()
+        return Result(incoming, isNew = true, changed = true)
     }
 
     /** 是否同一地震。 */
@@ -66,17 +83,18 @@ class EventDeduplicator(
     }
 
     /**
-     * 合并两版同一地震的报告：
-     * - 报数高者信息更全 → 作为"更优"版本；报数相同比震级；再相同取后到者；
-     * - 保留 canonical ID 与主来源，合并 [QuakeEvent.mergedSources]。
+     * 合并两版同一地震的报告。
+     * 排序规则：报数高者胜；报数相同比震级；再相同取后到者（低报数不得覆盖高报数）。
      */
     private fun merge(current: QuakeEvent, incoming: QuakeEvent): QuakeEvent {
         val currentSerial = current.updateSerial ?: 0
         val incomingSerial = incoming.updateSerial ?: 0
         val better = when {
             incomingSerial > currentSerial -> incoming
-            incomingSerial == currentSerial && incoming.magnitude > current.magnitude -> incoming
-            incoming.receivedAt > current.receivedAt -> incoming
+            incomingSerial < currentSerial -> current
+            incoming.magnitude > current.magnitude -> incoming
+            incoming.magnitude < current.magnitude -> current
+            incoming.receivedAt >= current.receivedAt -> incoming
             else -> current
         }
 
@@ -86,13 +104,42 @@ class EventDeduplicator(
             else -> incoming.placeName
         }
 
+        // mergedSources 只记录"另外的来源"：同源多报不应把自己也算进去，
+        // 否则每次 EEW 复报都会让 mergedSources 从空变成 [自己]，被误判为内容变化
+        val sources = if (incoming.source == current.source) {
+            current.mergedSources
+        } else {
+            (current.mergedSources + incoming.source).distinct()
+        }
+
         return better.copy(
             id = current.id,
             source = current.source,
             placeName = place,
-            mergedSources = (current.mergedSources + incoming.source).distinct(),
+            mergedSources = sources,
             raw = null,
         )
+    }
+
+    private fun isContentChanged(old: QuakeEvent, new: QuakeEvent): Boolean =
+        old.updateSerial != new.updateSerial ||
+            old.magnitude != new.magnitude ||
+            old.intensity != new.intensity ||
+            old.arrivalTime != new.arrivalTime ||
+            old.remainTimeSec != new.remainTimeSec ||
+            old.placeName != new.placeName ||
+            old.originTime != new.originTime ||
+            old.latitude != new.latitude ||
+            old.longitude != new.longitude ||
+            old.depthKm != new.depthKm ||
+            old.mergedSources != new.mergedSources
+
+    private fun pruneIfNeeded() {
+        while (entries.size > maxEntries) {
+            val oldestKey = entries.keys.firstOrNull() ?: break
+            entries.remove(oldestKey)
+            idIndex.entries.removeAll { it.value == oldestKey }
+        }
     }
 
     fun clear() {
