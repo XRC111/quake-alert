@@ -57,63 +57,29 @@ jobs:
           echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
           echo "$SDK/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
 
-      # compileSdk 37（miuix 0.9.2 要求）需要 platforms;android-37。
-      # 注意：Android 16 起 Google 仓库的包名带 minor 号（platforms;android-37.0），
-      # 而 AGP 按 compileSdk=37 去找 hash `android-37`；两者对不上，
-      # 所以装完后复制目录，并重写 package.xml / source.properties 让 AGP 能识别。
-      #
-      # 这里不用 heredoc：YAML 块标量的缩进会让终止符 `EOF` 失效，
-      # 后续命令会被当成 heredoc 内容吞掉（且不报错），因此改用 printf。
+      # compileSdk 37（miuix 0.9.2 要求）对应仓库里的 platforms;android-37.0。
+      # 构建脚本已声明 compileSdkMinor = 0，AGP 会按 hash "android-37.0" 查找，
+      # 因此这里只要把包装上即可，不再改写目录名/package.xml。
+      # 注意：YAML 块标量里的 heredoc 终止符不能缩进，否则后续命令会被吞掉；
+      # 这里全程用 printf / 普通命令，避免该陷阱。
       - name: 安装 Android SDK Platform 37
         run: |
           set -euo pipefail
-          # sdkmanager 读 license 时会一直等待输入；`yes` 退出产生的 SIGPIPE
-          # 在 pipefail 下会被当成失败，所以这里显式忽略。
+          # sdkmanager 读 license 会等待输入；`yes` 退出产生的 SIGPIPE 在 pipefail 下
+          # 会被当成失败，所以显式忽略。
           yes | sdkmanager --licenses > /dev/null 2>&1 || true
 
-          sdkmanager "platforms;android-37.0" "build-tools;37.0.0" \
-            || sdkmanager "platforms;android-37" "build-tools;37.0.0"
-          # AGP 8.13 默认 build-tools 35.0.0；不装的话它会在构建期自己下载，
-          # 这里提前装好，避免无谓等待（失败也无所谓，licenses 已接受）
+          sdkmanager "platforms;android-37.0" "build-tools;37.0.0"
+          # AGP 8.13 默认 build-tools 35.0.0，提前装好省一次下载
           sdkmanager "build-tools;35.0.0" > /dev/null || true
 
-          SRC="$ANDROID_HOME/platforms/android-37.0"
-          DST="$ANDROID_HOME/platforms/android-37"
-          if [ -f "$SRC/android.jar" ]; then
-            rm -rf "$DST"
-            cp -r "$SRC" "$DST"
-
-            # 关键：AGP 认的是 package.xml 里的元数据，不是目录名。
-            # 官方平台包的 api-level 写的是 "37.0"（带 minor），sdklib 会算成
-            # hash "android-37.0"；而 compileSdk = 37 请求的是 "android-37"，
-            # 两者对不上 → Failed to find target with hash string 'android-37'。
-            # 这里把 path / api-level 改回无 minor 形式，minor 元素一并删掉。
-            # 用 sed -i.bak：BSD/GNU sed 行为一致（-i '' 只在 BSD 成立）。
-            sed -i.bak -e 's#platforms;android-37\.0#platforms;android-37#g' \
-                       -e 's#<api-level>37\.0</api-level>#<api-level>37</api-level>#g' \
-                       -e '/<minor-api-level>/d' "$DST/package.xml"
-            rm -f "$DST/package.xml.bak"
-
-            printf '%s\n' \
-              'Pkg.Desc=Android SDK Platform 37' \
-              'Pkg.Revision=1' \
-              'AndroidVersion.ApiLevel=37' \
-              'AndroidVersion.CodeName=REL' \
-              'Package.Path=platforms;android-37' > "$DST/source.properties"
-          fi
-
-          if [ ! -f "$DST/android.jar" ]; then
-            echo "::error::platforms;android-37 安装失败（缺 android.jar）"
+          if [ ! -f "$ANDROID_HOME/platforms/android-37.0/android.jar" ]; then
+            echo "::error::platforms;android-37.0 安装失败（缺 android.jar）"
             ls -la "$ANDROID_HOME/platforms" || true
             exit 1
           fi
-
           echo "--- platforms ---"
           ls "$ANDROID_HOME/platforms"
-          echo "--- android-37/package.xml 关键字段 ---"
-          grep -E "localPackage path|api-level|minor-api-level" "$DST/package.xml" || true
-          echo "--- android-37/source.properties ---"
-          cat "$DST/source.properties"
 
       - name: Setup Gradle (缓存 + 构建扫描)
         uses: gradle/actions/setup-gradle@v4
