@@ -1,5 +1,10 @@
 name: Build All Targets
 
+# 默认 GITHUB_TOKEN 是只读的：打 tag 发布 Release 需要写权限，
+# 否则 softprops/action-gh-release 会 403 Resource not accessible by integration
+permissions:
+  contents: write
+
 on:
   push:
     branches: [ main, master, develop ]
@@ -205,6 +210,7 @@ jobs:
         with:
           files: |
             composeApp/build/outputs/apk/release/*.apk
+            composeApp/build/outputs/bundle/release/*.aab
             composeApp/build/compose/binaries/main-release/dmg/*
           generate_release_notes: true
         env:
