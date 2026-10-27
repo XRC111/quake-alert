@@ -133,8 +133,8 @@ android {
         applicationId = "com.quake.alert"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.0.1"
     }
 
     sourceSets["main"].apply {
@@ -193,7 +193,7 @@ compose.desktop {
             // 暂只保留 Dmg + Msi（MSI 为 jpackage 最成熟格式），Exe 待定位后恢复。
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi)
             packageName = "QuakeAlert"
-            packageVersion = "1.0.0"
+            packageVersion = "1.0.1"
             // 打包元数据保持纯 ASCII：jpackage 在 Windows 上处理非 ASCII
             // 字符（中文/©）会触发 Charset 解码错误（Input length = 1）
             description = "Cross-platform earthquake alert client (Wolfx CENC + USGS multi-source)"

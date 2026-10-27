@@ -274,3 +274,34 @@ jobs:
             composeApp/build/compose/binaries/main-release/**/*.msi
             composeApp/build/compose/binaries/main-release/**/*.exe
           if-no-files-found: error
+
+      # 打 tag 时把 Msi/Exe 也挂到同一个 Release。
+      # Release 由 macOS job 的 softprops 创建；两个 job 并行，直接调用会撞上
+      # “release already exists” 竞争，所以这里先轮询等待 Release 出现，再用
+      # gh release upload --clobber 追加附件（macOS job 失败时自行兜底创建）。
+      - name: 上传 Windows 安装包到 Release
+        if: startsWith(github.ref, 'refs/tags/v') && steps.package.outcome == 'success'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $repo = $env:GITHUB_REPOSITORY
+          $ready = $false
+          for ($i = 0; $i -lt 60; $i++) {
+            gh release view $tag --repo $repo *> $null
+            if ($LASTEXITCODE -eq 0) { $ready = $true; break }
+            Start-Sleep -Seconds 10
+          }
+          if (-not $ready) {
+            Write-Host "Release $tag 尚未创建，由 Windows job 兜底创建"
+            gh release create $tag --repo $repo --generate-notes
+            if ($LASTEXITCODE -ne 0) { throw "创建 Release 失败" }
+          }
+          $files = @(Get-ChildItem -Path "composeApp/build/compose/binaries/main-release" -Recurse -Include *.msi, *.exe)
+          if ($files.Count -eq 0) { throw "未找到 Msi/Exe 产物" }
+          foreach ($f in $files) {
+            Write-Host "上传 $($f.FullName)"
+            gh release upload $tag $f.FullName --repo $repo --clobber
+            if ($LASTEXITCODE -ne 0) { throw "上传 $($f.Name) 失败" }
+          }
